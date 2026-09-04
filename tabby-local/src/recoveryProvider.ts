@@ -2,6 +2,7 @@ import { Injectable, Injector } from '@angular/core'
 import { TabRecoveryProvider, NewTabParameters, RecoveryToken, ProfilesService } from 'tabby-core'
 
 import { TerminalTabComponent } from './components/terminalTab.component'
+import { CODEX_RECOVERY_COMMAND } from './utils/codexRecovery'
 
 /** @hidden */
 @Injectable()
@@ -18,7 +19,9 @@ export class RecoveryProvider extends TabRecoveryProvider<TerminalTabComponent> 
             inputs: {
                 profile: this.injector.get(ProfilesService).getConfigProxyForProfile(recoveryToken.profile),
                 savedState: recoveryToken.savedState,
-                recoveryCommand: recoveryToken.recoveryCommand === 'codex' ? 'codex' : null,
+                recoveryCommand: recoveryToken.recoveryCommand === CODEX_RECOVERY_COMMAND
+                    ? CODEX_RECOVERY_COMMAND
+                    : null,
             },
         }
     }

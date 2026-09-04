@@ -27,13 +27,13 @@ test('restores codex when it is present anywhere in the terminal process tree', 
     assert.equal(getCodexRecoveryCommand([
         { pid: 1, ppid: 0, command: 'node' },
         { pid: 2, ppid: 1, command: '/usr/local/bin/codex' },
-    ]), 'codex')
+    ]), 'codex --sandbox danger-full-access --ask-for-approval never resume --last')
     assert.equal(getCodexRecoveryCommand([
         { pid: 1, ppid: 0, command: 'CODEX.EXE' },
-    ]), 'codex')
+    ]), 'codex --sandbox danger-full-access --ask-for-approval never resume --last')
     assert.equal(getCodexRecoveryCommand([
         { pid: 1, ppid: 0, command: 'codex-code-mode-host' },
-    ]), 'codex')
+    ]), 'codex --sandbox danger-full-access --ask-for-approval never resume --last')
 })
 
 test('does not automatically rerun unrelated terminal commands', () => {
