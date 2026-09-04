@@ -27,6 +27,11 @@ profile-icon(
 .buttons
     button(*ngIf='!config.store.terminal.hideTabOptionsButton',(click)='onContextMenu($event)') !{require('../icons/tab-options.svg')}
 
-    button(*ngIf='!config.store.terminal.hideCloseButton && !tab.effectivelyPinned',(click)='app.closeTab(tab, true)') &times;
+    button(
+        *ngIf='!config.store.terminal.hideCloseButton && !tab.effectivelyPinned',
+        [disabled]='closeConfirmationPending',
+        [attr.aria-label]='"Close tab"|translate',
+        (click)='confirmClose($event)'
+    ) &times;
 
 ng-content

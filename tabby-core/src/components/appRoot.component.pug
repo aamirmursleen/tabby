@@ -82,6 +82,24 @@ title-bar(
 
             .btn-group.background
                 .d-flex(
+                    ngbDropdown,
+                    container='body',
+                    #openTabsDropdown='ngbDropdown',
+                    (openChange)='onOpenTabsOpenChange($event)'
+                )
+                    button.btn.btn-secondary.btn-tab-bar(
+                        [ngbTooltip]='"Show all open tabs"|translate',
+                        [attr.aria-label]='"Show all open tabs"|translate',
+                        ngbDropdownToggle
+                    ) !{require('../icons/tab-list.svg')}
+                    open-tabs-menu(
+                        ngbDropdownMenu,
+                        [open]='openTabsMenuOpen',
+                        (tabSelected)='onOpenTabSelected($event)',
+                        (dismissed)='openTabsDropdown.close()'
+                    )
+
+                .d-flex(
                     *ngFor='let button of rightToolbarButtons'
                 )
                     button.btn.btn-secondary.btn-tab-bar(

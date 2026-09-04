@@ -24,6 +24,7 @@ function mergeEnv (...envs) {
 
 /** @hidden */
 export class Session extends BaseSession {
+    restoredFromPTY = false
     private pty: PTYProxy|null = null
     private ptyClosed = false
     private pauseAfterExit = false
@@ -49,6 +50,7 @@ export class Session extends BaseSession {
 
         if (options.restoreFromPTYID) {
             pty = await this.ptyInterface.restore(options.restoreFromPTYID)
+            this.restoredFromPTY = !!pty
             options.restoreFromPTYID = null
         }
 

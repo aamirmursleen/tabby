@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/explicit-module-boundary-types */
 import { Component, Input, Optional, Inject, HostBinding, HostListener, NgZone } from '@angular/core'
 import { auditTime } from 'rxjs'
+import { TranslateService } from '@ngx-translate/core'
 import { TabContextMenuItemProvider } from '../api/tabContextMenuProvider'
 import { BaseTabComponent } from './baseTab.component'
 import { SplitTabComponent } from './splitTab.component'
@@ -11,6 +12,7 @@ import { ConfigService } from '../services/config.service'
 import { BaseComponent } from './base.component'
 import { MenuItemOptions } from '../api/menu'
 import { PlatformService } from '../api/platform'
+import { buildCloseTabConfirmation } from '../utils/openTabs'
 
 /** @hidden */
 @Component({
@@ -24,6 +26,7 @@ export class TabHeaderComponent extends BaseComponent {
     @Input() tab: BaseTabComponent
     @Input() progress: number|null
     Platform = Platform
+    closeConfirmationPending = false
 
     constructor (
         public app: AppService,
@@ -31,6 +34,7 @@ export class TabHeaderComponent extends BaseComponent {
         public hostApp: HostAppService,
         private hotkeys: HotkeysService,
         private platform: PlatformService,
+        private translate: TranslateService,
         private zone: NgZone,
         @Optional() @Inject(TabContextMenuItemProvider) protected contextMenuProviders: TabContextMenuItemProvider[],
     ) {
@@ -87,6 +91,28 @@ export class TabHeaderComponent extends BaseComponent {
             this.app.emitTabDragEnded()
             this.app.emitTabsChanged()
         })
+    }
+
+    async confirmClose ($event: MouseEvent): Promise<void> {
+        $event.stopPropagation()
+        if (this.closeConfirmationPending) {
+            return
+        }
+
+        this.closeConfirmationPending = true
+        try {
+            const index = Math.max(0, this.app.tabs.indexOf(this.tab))
+            const response = await this.platform.showMessageBox(buildCloseTabConfirmation(this.tab, index, {
+                closeTab: this.translate.instant('Close tab'),
+                cancel: this.translate.instant('Cancel'),
+                areYouSure: this.translate.instant('Are you sure?'),
+            }))
+            if (response.response === 0) {
+                await this.app.closeTab(this.tab, false)
+            }
+        } finally {
+            this.closeConfirmationPending = false
+        }
     }
 
     @HostBinding('class.flex-width') get isFlexWidthEnabled (): boolean {

@@ -1,0 +1,45 @@
+.open-tabs-shell(role='dialog', [attr.aria-label]='"Open tabs"|translate')
+    .open-tabs-heading
+        span(translate) Open tabs
+        span.open-tabs-count {{filteredItems.length}}
+
+    .open-tabs-search-wrap
+        input.open-tabs-search(
+            #searchInput,
+            type='search',
+            autocomplete='off',
+            spellcheck='false',
+            [ngModel]='query',
+            (ngModelChange)='onQueryChange($event)',
+            (keydown)='onKeyDown($event)',
+            [placeholder]='"Search open tabs"|translate',
+            [attr.aria-label]='"Search open tabs"|translate',
+            aria-controls='open-tabs-list',
+            aria-autocomplete='list',
+            role='combobox',
+            [attr.aria-expanded]='open',
+            [attr.aria-activedescendant]='filteredItems[highlightedIndex] ? getItemID(filteredItems[highlightedIndex]) : null'
+        )
+
+    #open-tabs-list.open-tabs-list(#tabList, role='listbox')
+        button.open-tabs-item(
+            *ngFor='let item of filteredItems; trackBy: trackByTab; let itemIndex = index',
+            type='button',
+            role='option',
+            tabindex='-1',
+            [id]='getItemID(item)',
+            [title]='item.label',
+            [class.active]='item.active',
+            [class.highlighted]='itemIndex === highlightedIndex',
+            [attr.aria-selected]='item.active',
+            (mouseenter)='highlightedIndex = itemIndex',
+            (click)='selectItem(item)'
+        )
+            span.open-tabs-index {{item.index + 1}}
+            span.open-tabs-dot([style.background-color]='item.color || null')
+            span.open-tabs-name {{item.label}}
+            span.open-tabs-check(*ngIf='item.active', aria-hidden='true') ✓
+
+        .open-tabs-empty(*ngIf='filteredItems.length === 0')
+            span(*ngIf='items.length === 0', translate) No open tabs
+            span(*ngIf='items.length > 0', translate) No matching tabs

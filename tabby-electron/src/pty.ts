@@ -2,6 +2,7 @@ import * as psNode from 'ps-node'
 import { ipcRenderer } from 'electron'
 import { ChildProcess, PTYInterface, PTYProxy } from 'tabby-local'
 import { getWorkingDirectoryFromPID } from 'native-process-working-directory'
+import { getTerminalProcessTree } from './utils/processTree'
 
 /* eslint-disable block-scoped-var */
 
@@ -99,6 +100,17 @@ export class ElectronPTYProxy extends PTYProxy {
     }
 
     async getChildProcesses (): Promise<ChildProcess[]> {
+        if (process.platform === 'darwin') {
+            const terminalPID = await this.getPID()
+            const truePID = await this.getTruePID()
+            const processes = await macOSNativeProcessList.getProcessList()
+            const processTree: ChildProcess[] = processes.map(process => ({
+                pid: process.pid,
+                ppid: process.ppid,
+                command: process.name,
+            }))
+            return getTerminalProcessTree(processTree, terminalPID, truePID)
+        }
         return this.getChildProcessesInternal(await this.getTruePID())
     }
 

@@ -29,6 +29,7 @@ import { SplitTabPaneLabelComponent } from './components/splitTabPaneLabel.compo
 import { UnlockVaultModalComponent } from './components/unlockVaultModal.component'
 import { WelcomeTabComponent } from './components/welcomeTab.component'
 import { TransfersMenuComponent } from './components/transfersMenu.component'
+import { OpenTabsMenuComponent } from './components/openTabsMenu.component'
 import { ProfileIconComponent } from './components/profileIcon.component'
 import { ProfileTreeComponent } from './components/profileTree.component'
 
@@ -128,6 +129,7 @@ const PROVIDERS = [
         UnlockVaultModalComponent,
         WelcomeTabComponent,
         TransfersMenuComponent,
+        OpenTabsMenuComponent,
         DropZoneDirective,
         CdkAutoDropGroup,
         ProfileIconComponent,

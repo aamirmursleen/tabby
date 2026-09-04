@@ -72,9 +72,11 @@ export class AppRootComponent {
     @HostBinding('class.no-tabs') noTabs = true
     @ViewChildren(TabBodyComponent) tabBodies: TabBodyComponent[]
     @ViewChild('activeTransfersDropdown') activeTransfersDropdown: NgbDropdown
+    @ViewChild('openTabsDropdown') openTabsDropdown: NgbDropdown
     unsortedTabs: BaseTabComponent[] = []
     updatesAvailable = false
     activeTransfers: FileTransfer[] = []
+    openTabsMenuOpen = false
     private logger: Logger
 
     constructor (
@@ -246,6 +248,15 @@ export class AppRootComponent {
         if (this.activeTransfers.length === 0) {
             this.activeTransfersDropdown.close()
         }
+    }
+
+    onOpenTabsOpenChange (open: boolean): void {
+        this.openTabsMenuOpen = open
+    }
+
+    onOpenTabSelected (tab: BaseTabComponent): void {
+        this.openTabsDropdown.close()
+        this.app.selectTab(tab)
     }
 
     @HostBinding('class.vibrant') get isVibrant () {
