@@ -5,6 +5,7 @@ import { HostAppService, ConfigService, WIN_BUILD_CONPTY_SUPPORTED, isWindowsBui
 import { BaseSession } from 'tabby-terminal'
 import { SessionOptions, ChildProcess, PTYInterface, PTYProxy } from './api'
 import { getEnvironment, substituteEnv } from './environment'
+import { OutputAcknowledgements } from './utils/outputAcknowledgements'
 
 const windowsDirectoryRegex = /([a-zA-Z]:[^\:\[\]\?\"\<\>\|]+)/mi
 
@@ -118,10 +119,19 @@ export class Session extends BaseSession {
 
         this.open = true
 
+        const acknowledgements = new OutputAcknowledgements(
+            bytes => pty!.ackData(bytes),
+            () => this.waitForOutputDrain(),
+            error => {
+                this.logger.warn('Terminal output could not be consumed:', error)
+                this.destroy()
+            },
+        )
+        this.destroyed$.subscribe(() => acknowledgements.close())
         this.pty.subscribe('data', (array: Uint8Array) => {
-            this.pty!.ackData(array.length)
             const data = Buffer.from(array)
             this.emitOutput(data)
+            acknowledgements.push(array.length)
             if (this.hostApp.platform === Platform.Windows) {
                 this.guessWindowsCWD(data.toString())
             }

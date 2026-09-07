@@ -3,97 +3,118 @@ import { Subject, Observable } from 'rxjs'
 import { SessionMiddleware } from '../api/middleware'
 
 const OSCPrefix = Buffer.from('\x1b]')
-const OSCSuffixes = [Buffer.from('\x07'), Buffer.from('\x1b\\')]
+const MAX_OSC_BYTES = 1024 * 1024
 
 export class OSCProcessor extends SessionMiddleware {
     get cwdReported$ (): Observable<string> { return this.cwdReported }
     get copyRequested$ (): Observable<string> { return this.copyRequested }
 
     private cwdReported = new Subject<string>()
-    private buffer: Buffer | null = null
     private copyRequested = new Subject<string>()
+    private chunks: Buffer[] = []
+    private bufferedBytes = 0
+    private inOSC = false
+    private pendingEscape = false
+    private oscEscape = false
 
     feedFromSession (data: Buffer): void {
-        // Prepend any buffered data from previous chunks
-        if (this.buffer) {
-            data = Buffer.concat([this.buffer, data])
-            this.buffer = null
+        if (!data.length) {
+            return
+        }
+        // Keep ordinary terminal output on the zero-copy fast path.
+        if (!this.inOSC && !this.pendingEscape && data.indexOf(OSCPrefix) === -1 && data[data.length - 1] !== 0x1b) {
+            super.feedFromSession(data)
+            return
         }
 
-        let startIndex = 0
-        const processedData: Buffer[] = []
-
-        while (startIndex < data.length) {
-            const prefixIndex = data.indexOf(OSCPrefix, startIndex)
-
-            if (prefixIndex === -1) {
-                // No more OSC sequences, pass remaining data
-                if (startIndex < data.length) {
-                    processedData.push(data.subarray(startIndex))
-                }
-                break
-            }
-
-            // Pass data before this OSC sequence
-            if (prefixIndex > startIndex) {
-                processedData.push(data.subarray(startIndex, prefixIndex))
-            }
-
-            // Look for suffix after the prefix
-            const suffixSearchStart = prefixIndex + OSCPrefix.length
-            let foundSuffix: [Buffer, number] | null = null
-
-            for (const suffix of OSCSuffixes) {
-                const suffixIndex = data.indexOf(suffix, suffixSearchStart)
-                if (suffixIndex !== -1) {
-                    if (!foundSuffix || suffixIndex < foundSuffix[1]) {
-                        foundSuffix = [suffix, suffixIndex]
-                    }
-                }
-            }
-
-            if (!foundSuffix) {
-                // No suffix found - buffer the rest and wait for next chunk
-                this.buffer = data.subarray(prefixIndex)
-                break
-            }
-
-            // Extract OSC string (between prefix and suffix)
-            const oscString = data.subarray(suffixSearchStart, foundSuffix[1]).toString()
-            const [oscCodeString, ...oscParams] = oscString.split(';')
-            const oscCode = parseInt(oscCodeString)
-
-            if (oscCode === 1337) {
-                const paramString = oscParams.join(';')
-                if (paramString.startsWith('CurrentDir=')) {
-                    let reportedCWD = paramString.split('=', 2)[1]
-                    if (reportedCWD.startsWith('~')) {
-                        reportedCWD = os.homedir() + reportedCWD.substring(1)
-                    }
-                    this.cwdReported.next(reportedCWD)
+        const output: Buffer[] = []
+        let start = 0
+        for (let i = 0; i < data.length; i++) {
+            const byte = data[i]
+            if (this.inOSC) {
+                this.bufferedBytes++
+                if (byte === 0x07 || this.oscEscape && byte === 0x5c) {
+                    this.chunks.push(data.subarray(start, i + 1))
+                    const sequence = Buffer.concat(this.chunks)
+                    this.processOSC(sequence, byte === 0x07 ? 1 : 2, output)
+                    this.resetOSC()
+                    start = i + 1
+                } else if (this.bufferedBytes > MAX_OSC_BYTES) {
+                    // Discard malformed oversized OSC, including clipboard side
+                    // effects, so subsequent terminal output can be displayed.
+                    this.resetOSC()
+                    start = i + 1
                 } else {
-                    console.debug('Unsupported OSC 1337 parameter:', paramString)
+                    this.oscEscape = byte === 0x1b
                 }
-            } else if (oscCode === 52) {
-                if (oscParams[0] === 'c' || oscParams[0] === '') {
-                    const content = Buffer.from(oscParams[1], 'base64')
-                    this.copyRequested.next(content.toString())
-                }
-            } else {
-                processedData.push(data.subarray(prefixIndex, foundSuffix[1] + foundSuffix[0].length))
+                continue
             }
 
-            // Move past this OSC sequence
-            startIndex = foundSuffix[1] + foundSuffix[0].length
-        }
+            if (this.pendingEscape) {
+                this.pendingEscape = false
+                if (byte === 0x5d) {
+                    this.chunks = [Buffer.from([0x1b])]
+                    this.inOSC = true
+                    this.bufferedBytes = 2
+                    start = i
+                    continue
+                }
+                output.push(Buffer.from([0x1b]))
+            }
 
-        // Pass through all processed data
-        if (processedData.length > 0) {
-            super.feedFromSession(Buffer.concat(processedData))
+            if (byte === 0x1b) {
+                if (i === data.length - 1) {
+                    output.push(data.subarray(start, i))
+                    this.pendingEscape = true
+                    start = data.length
+                } else if (data[i + 1] === 0x5d) {
+                    output.push(data.subarray(start, i))
+                    this.inOSC = true
+                    this.bufferedBytes = 2
+                    start = i
+                    i++
+                }
+            }
+        }
+        if (this.inOSC) {
+            // Retain only the fragment, not a view pinning its entire input buffer.
+            // Concatenate once on completion, not on every incoming chunk.
+            this.chunks.push(Buffer.from(data.subarray(start)))
+        } else if (start < data.length) {
+            output.push(data.subarray(start))
+        }
+        if (output.length) {
+            super.feedFromSession(Buffer.concat(output))
         }
     }
 
+    private processOSC (sequence: Buffer, suffixLength: number, output: Buffer[]): void {
+        const [code, ...params] = sequence.subarray(2, -suffixLength).toString().split(';')
+        if (code === '1337') {
+            const param = params.join(';')
+            if (param.startsWith('CurrentDir=')) {
+                const cwd = param.substring('CurrentDir='.length)
+                this.cwdReported.next(cwd.startsWith('~') ? os.homedir() + cwd.substring(1) : cwd)
+            }
+        } else if (code === '52') {
+            if ((params[0] === 'c' || params[0] === '') && params.length > 1 && params[1] !== '?') {
+                this.copyRequested.next(Buffer.from(params[1], 'base64').toString())
+            }
+        } else {
+            output.push(sequence)
+        }
+    }
+
+    private resetOSC (): void {
+        this.chunks = []
+        this.bufferedBytes = 0
+        this.inOSC = false
+        this.oscEscape = false
+    }
+
     close (): void {
+        this.resetOSC()
+        this.pendingEscape = false
         this.cwdReported.complete()
         this.copyRequested.complete()
         super.close()

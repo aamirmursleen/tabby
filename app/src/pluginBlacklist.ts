@@ -8,4 +8,5 @@ export const PLUGIN_BLACKLIST = [
     'terminus-elastic-quick-cmds', // broken and abandoned, fork of quick-commands
     'tabby-fig', // abandoned,
     'tabby-plugin-fig-integration', // abandoned,
+    'tabby-tab-list', // this fork bundles its tab switcher, close confirmation and session recovery
 ]

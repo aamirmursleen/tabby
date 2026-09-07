@@ -73,6 +73,8 @@ export abstract class Frontend {
     abstract clearSelection (): void
     abstract focus (): void
     abstract write (data: string): Promise<void>
+    /** Wait until queued output has been parsed. Optional for third-party frontends. */
+    flush (): Promise<void> { return Promise.resolve() }
     abstract clear (): void
     abstract visualBell (): void
 

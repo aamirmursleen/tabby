@@ -799,11 +799,14 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
             throw new Error('Session not set')
         }
 
-        // this.session.output$.bufferTime(10).subscribe((datas) => {
+        this.session.setOutputDrainHandler(async () => {
+            await this.frontendWriteLock
+            await this.frontend?.flush()
+        })
         this.attachSessionHandler(this.session.output$, data => {
             if (this.enablePassthrough) {
                 this.output.next(data)
-                this.write(data)
+                this.write(data).catch(error => this.logger.warn('Terminal output failed:', error))
             }
         })
 
@@ -854,6 +857,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
     }
 
     protected detachSessionHandlers (): void {
+        this.session?.setOutputDrainHandler(null)
         this.sessionHandlers.cancelAll()
     }
 

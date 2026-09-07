@@ -6,15 +6,19 @@ export interface ProcessTreeEntry {
 export function getDescendantProcesses<T extends ProcessTreeEntry> (processes: readonly T[], rootPID: number): T[] {
     const descendants: T[] = []
     const discoveredPIDs = new Set([rootPID])
-    let foundProcess = true
-
-    while (foundProcess) {
-        foundProcess = false
-        for (const process of processes) {
-            if (!discoveredPIDs.has(process.pid) && discoveredPIDs.has(process.ppid)) {
-                descendants.push(process)
-                discoveredPIDs.add(process.pid)
-                foundProcess = true
+    const children = new Map<number, T[]>()
+    for (const process of processes) {
+        const siblings = children.get(process.ppid) ?? []
+        siblings.push(process)
+        children.set(process.ppid, siblings)
+    }
+    const parents = [rootPID]
+    for (const parent of parents) {
+        for (const child of children.get(parent) ?? []) {
+            if (!discoveredPIDs.has(child.pid)) {
+                descendants.push(child)
+                discoveredPIDs.add(child.pid)
+                parents.push(child.pid)
             }
         }
     }

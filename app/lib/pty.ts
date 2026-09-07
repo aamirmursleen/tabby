@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { ipcMain } from 'electron'
 import { Application } from './app'
 import { UTF8Splitter } from './utfSplitter'
-import { Subject, debounceTime } from 'rxjs'
+import { Subject, Subscription, debounceTime } from 'rxjs'
 
 class PTYDataQueue {
     private buffers: Buffer[] = []
@@ -13,9 +13,14 @@ class PTYDataQueue {
     private flowPaused = false
     private decoder = new UTF8Splitter()
     private output$ = new Subject<Buffer>()
+    private outputSubscription: Subscription
+    private disposed = false
+    private ended = false
+    private onDrained: (() => void)|null = null
+    private scheduledEmit: ReturnType<typeof setImmediate>|null = null
 
     constructor (private pty: nodePTY.IPty, private onData: (data: Buffer) => void) {
-        this.output$.pipe(debounceTime(500)).subscribe(() => {
+        this.outputSubscription = this.output$.pipe(debounceTime(500)).subscribe(() => {
             const remainder = this.decoder.flush()
             if (remainder.length) {
                 this.onData(remainder)
@@ -24,23 +29,63 @@ class PTYDataQueue {
     }
 
     push (data: Buffer) {
+        if (this.disposed || this.ended) {
+            return
+        }
         this.buffers.push(data)
         this.maybeEmit()
     }
 
     ack (length: number) {
-        this.delta -= length
+        if (this.disposed || !Number.isSafeInteger(length) || length <= 0) {
+            return
+        }
+        this.delta = Math.max(0, this.delta - length)
         this.maybeEmit()
     }
 
+    finish (onDrained: () => void): void {
+        if (this.disposed) {
+            onDrained()
+            return
+        }
+        this.ended = true
+        this.onDrained = onDrained
+        this.maybeEmit()
+    }
+
+    dispose (): void {
+        this.disposed = true
+        this.buffers = []
+        this.decoder.flush()
+        this.outputSubscription.unsubscribe()
+        this.output$.complete()
+        if (this.flowPaused && !this.ended) {
+            this.pty.resume()
+            this.flowPaused = false
+        }
+        if (this.scheduledEmit) {
+            clearImmediate(this.scheduledEmit)
+            this.scheduledEmit = null
+        }
+        const onDrained = this.onDrained
+        this.onDrained = null
+        onDrained?.()
+    }
+
     private maybeEmit () {
+        if (this.disposed) {
+            return
+        }
         if (this.delta <= this.maxDelta && this.flowPaused) {
             this.resume()
             return
         }
         if (this.buffers.length > 0) {
-            if (this.delta > this.maxDelta && !this.flowPaused) {
-                this.pause()
+            if (this.delta > this.maxDelta) {
+                if (!this.flowPaused) {
+                    this.pause()
+                }
                 return
             }
 
@@ -64,7 +109,19 @@ class PTYDataQueue {
             this.delta += toSend.length
 
             if (this.buffers.length) {
-                setImmediate(() => this.maybeEmit())
+                this.scheduledEmit ??= setImmediate(() => {
+                    this.scheduledEmit = null
+                    this.maybeEmit()
+                })
+            }
+        }
+        if (this.ended && !this.buffers.length) {
+            const remainder = this.decoder.flush()
+            if (remainder.length) {
+                this.onData(remainder)
+            }
+            if (this.delta === 0) {
+                this.dispose()
             }
         }
     }
@@ -76,12 +133,16 @@ class PTYDataQueue {
     }
 
     private pause () {
-        this.pty.pause()
+        if (!this.ended) {
+            this.pty.pause()
+        }
         this.flowPaused = true
     }
 
     private resume () {
-        this.pty.resume()
+        if (!this.ended) {
+            this.pty.resume()
+        }
         this.flowPaused = false
         this.maybeEmit()
     }
@@ -90,22 +151,34 @@ class PTYDataQueue {
 export class PTY {
     private pty: nodePTY.IPty
     private outputQueue: PTYDataQueue
+    private subscriptions: nodePTY.IDisposable[] = []
     exited = false
 
-    constructor (private id: string, private app: Application, ...args: any[]) {
+    constructor (private id: string, private app: Application, onDisposed: () => void, ...args: any[]) {
         this.pty = (nodePTY as any).spawn(...args)
-        for (const key of ['close', 'exit']) {
-            (this.pty as any).on(key, (...eventArgs) => this.emit(key, ...eventArgs))
-        }
 
         this.outputQueue = new PTYDataQueue(this.pty, data => {
             setImmediate(() => this.emit('data', data))
         })
 
-        this.pty.onData(data => this.outputQueue.push(Buffer.from(data)))
-        this.pty.onExit(() => {
+        this.subscriptions.push(this.pty.onData(data => this.outputQueue.push(Buffer.from(data))))
+        this.subscriptions.push(this.pty.onExit(event => {
             this.exited = true
-        })
+            this.outputQueue.finish(() => {
+                this.emit('exit', event.exitCode, event.signal)
+                this.emit('close')
+                for (const subscription of this.subscriptions) {
+                    subscription.dispose()
+                }
+                this.subscriptions = []
+                onDisposed()
+            })
+        }))
+    }
+
+    release (): void {
+        // No renderer remains to consume or acknowledge this session's output.
+        this.outputQueue.dispose()
     }
 
     getPID (): number {
@@ -138,37 +211,41 @@ export class PTY {
 }
 
 export class PTYManager {
-    private ptys: Record<string, PTY|undefined> = {}
+    private ptys = new Map<string, PTY>()
 
     init (app: Application): void {
         ipcMain.on('pty:spawn', (event, ...options) => {
             const id = uuidv4().toString()
             event.returnValue = id
-            this.ptys[id] = new PTY(id, app, ...options)
+            this.ptys.set(id, new PTY(id, app, () => { this.ptys.delete(id) }, ...options))
         })
 
         ipcMain.on('pty:exists', (event, id) => {
-            event.returnValue = this.ptys[id] && !this.ptys[id].exited
+            event.returnValue = this.ptys.has(id) && !this.ptys.get(id)!.exited
         })
 
         ipcMain.on('pty:get-pid', (event, id) => {
-            event.returnValue = this.ptys[id]?.getPID()
+            event.returnValue = this.ptys.get(id)?.getPID()
         })
 
         ipcMain.on('pty:resize', (_event, id, columns, rows) => {
-            this.ptys[id]?.resize(columns, rows)
+            this.ptys.get(id)?.resize(columns, rows)
         })
 
         ipcMain.on('pty:write', (_event, id, data) => {
-            this.ptys[id]?.write(Buffer.from(data))
+            this.ptys.get(id)?.write(Buffer.from(data))
         })
 
         ipcMain.on('pty:kill', (_event, id, signal) => {
-            this.ptys[id]?.kill(signal)
+            this.ptys.get(id)?.kill(signal)
         })
 
         ipcMain.on('pty:ack-data', (_event, id, length) => {
-            this.ptys[id]?.ackData(length)
+            this.ptys.get(id)?.ackData(length)
+        })
+
+        ipcMain.on('pty:release', (_event, id) => {
+            this.ptys.get(id)?.release()
         })
     }
 }

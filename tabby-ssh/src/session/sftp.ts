@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Subject, Observable } from 'rxjs'
 import { posix as posixPath } from 'path'
+import { randomUUID } from 'crypto'
 import { Injector } from '@angular/core'
 import { FileDownload, FileUpload, Logger, LogService } from 'tabby-core'
 import * as russh from 'russh'
@@ -46,6 +47,7 @@ export class SFTPSession {
     get closed$ (): Observable<void> { return this.closed }
     private closed = new Subject<void>()
     private logger: Logger
+    private uploadCommits = new Map<string, Promise<void>>()
 
     constructor (private sftp: russh.SFTP, injector: Injector) {
         this.logger = injector.get(LogService).create('sftp')
@@ -112,43 +114,111 @@ export class SFTPSession {
 
     async upload (path: string, transfer: FileUpload): Promise<void> {
         this.logger.info('Uploading into', path)
-        const tempPath = path + '.tabby-upload'
+        const tempPath = `${path}.tabby-upload-${randomUUID()}`
+        let handle: SFTPFileHandle|null = null
+        let tempCreated = false
         try {
-            const handle = await this.open(tempPath, russh.OPEN_WRITE | russh.OPEN_CREATE)
+            this.checkTransferCancelled(transfer)
+            handle = await this.open(tempPath, russh.OPEN_WRITE | russh.OPEN_CREATE | russh.OPEN_TRUNCATE)
+            tempCreated = true
             while (true) {
+                this.checkTransferCancelled(transfer)
                 const chunk = await transfer.read()
+                this.checkTransferCancelled(transfer)
                 if (!chunk.length) {
                     break
                 }
                 await handle.write(chunk)
             }
             await handle.close()
-            await this.unlink(path).catch(() => null)
-            await this.rename(tempPath, path)
+            handle = null
+            // Serialize commits to the same destination on servers that need
+            // the backup/rollback fallback instead of atomic replacement.
+            const previous = this.uploadCommits.get(path) ?? Promise.resolve()
+            const commit = previous.catch(() => null).then(async () => {
+                this.checkTransferCancelled(transfer)
+                await this.replaceUploadedFile(tempPath, path)
+            })
+            this.uploadCommits.set(path, commit)
+            try {
+                await commit
+            } finally {
+                if (this.uploadCommits.get(path) === commit) {
+                    this.uploadCommits.delete(path)
+                }
+            }
+            tempCreated = false
             transfer.close()
         } catch (e) {
             transfer.cancel()
-            this.unlink(tempPath).catch(() => null)
             throw e
+        } finally {
+            await handle?.close().catch(error => this.logger.warn('Could not close upload handle:', error))
+            if (tempCreated) {
+                await this.unlink(tempPath).catch(error => this.logger.warn('Could not remove upload temporary file:', error))
+            }
+        }
+    }
+
+    private async replaceUploadedFile (tempPath: string, path: string): Promise<void> {
+        try {
+            // Never unlink the destination before its replacement is committed.
+            await this.rename(tempPath, path)
+            return
+        } catch (error) {
+            const destination = await this.stat(path).catch(() => null)
+            if (!destination || destination.isDirectory) {
+                throw error
+            }
+        }
+
+        const backupPath = `${path}.tabby-backup-${randomUUID()}`
+        await this.rename(path, backupPath)
+        try {
+            await this.rename(tempPath, path)
+        } catch (error) {
+            try {
+                await this.rename(backupPath, path)
+            } catch {
+                // Never clean up the only surviving copy of the original.
+                throw new Error(`Upload failed; the original file is preserved in backup: ${backupPath}`)
+            }
+            throw error
+        }
+        await this.unlink(backupPath).catch(error => {
+            this.logger.warn('Upload succeeded but its backup could not be removed:', backupPath, error)
+        })
+    }
+
+    private checkTransferCancelled (transfer: FileUpload|FileDownload): void {
+        if (transfer.isCancelled()) {
+            throw new Error('Transfer cancelled')
         }
     }
 
     async download (path: string, transfer: FileDownload): Promise<void> {
         this.logger.info('Downloading', path)
+        let handle: SFTPFileHandle|null = null
         try {
-            const handle = await this.open(path, russh.OPEN_READ)
+            this.checkTransferCancelled(transfer)
+            handle = await this.open(path, russh.OPEN_READ)
             while (true) {
+                this.checkTransferCancelled(transfer)
                 const chunk = await handle.read()
+                this.checkTransferCancelled(transfer)
                 if (!chunk.length) {
                     break
                 }
                 await transfer.write(chunk)
             }
+            await handle.close()
+            handle = null
             transfer.close()
-            handle.close()
         } catch (e) {
             transfer.cancel()
             throw e
+        } finally {
+            await handle?.close().catch(error => this.logger.warn('Could not close download handle:', error))
         }
     }
 

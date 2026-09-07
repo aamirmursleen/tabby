@@ -1,0 +1,4 @@
+#!/bin/sh
+# Test-only stand-in: never contacts Codex or resumes a user's conversation.
+printf 'TEST_CODEX_RESUMED\n%s\n' "$*"
+pwd

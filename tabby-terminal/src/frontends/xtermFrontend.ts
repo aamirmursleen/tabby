@@ -27,6 +27,7 @@ const COLOR_NAMES = [
 const MAX_WEBGL_RECOVERY_ATTEMPTS = 3
 
 class FlowControl {
+    private disposed = false
     private blocked = false
     private blocked$ = new BehaviorSubject<boolean>(false)
     private pendingCallbacks = 0
@@ -40,6 +41,9 @@ class FlowControl {
     async write (data: string) {
         if (this.blocked) {
             await firstValueFrom(this.blocked$.pipe(filter(x => !x)))
+        }
+        if (this.disposed) {
+            return
         }
         this.bytesWritten += data.length
         if (this.bytesWritten > this.bytesThreshold) {
@@ -59,6 +63,13 @@ class FlowControl {
         } else {
             this.xterm.write(data)
         }
+    }
+
+    dispose (): void {
+        this.disposed = true
+        this.blocked = false
+        this.blocked$.next(false)
+        this.blocked$.complete()
     }
 }
 
@@ -89,6 +100,8 @@ export class XTermFrontend extends Frontend {
     private pinnedToBottom = true
     private pendingRendererRecovery = false
     private rendererRecoveryAttempts = 0
+    private pendingFlushes = new Set<() => void>()
+    private disposed = false
 
     private configService: ConfigService
     private hotkeysService: HotkeysService
@@ -213,6 +226,9 @@ export class XTermFrontend extends Frontend {
         //   - explicit scrollToBottom() calls
 
         const doResize = () => {
+            if (this.disposed || !this.element?.getClientRects().length) {
+                return
+            }
             try {
                 if (this.xterm.element && getComputedStyle(this.xterm.element).getPropertyValue('height') !== 'auto') {
                     const savedPinned = this.pinnedToBottom
@@ -409,6 +425,12 @@ export class XTermFrontend extends Frontend {
     }
 
     destroy (): void {
+        this.disposed = true
+        this.flowControl.dispose()
+        for (const resolve of this.pendingFlushes) {
+            resolve()
+        }
+        this.pendingFlushes.clear()
         super.destroy()
         this.webGLAddon?.dispose()
         this.canvasAddon?.dispose()
@@ -449,6 +471,9 @@ export class XTermFrontend extends Frontend {
     }
 
     async write (data: string): Promise<void> {
+        if (this.disposed) {
+            return
+        }
         // Capture pinned state before the write — the async write yields
         // to the event loop, and RAF callbacks (e.g. from wheel events)
         // could change pinnedToBottom mid-write.
@@ -467,6 +492,24 @@ export class XTermFrontend extends Frontend {
                 this.xterm.scrollToLine(targetY)
             }
         }
+    }
+
+    async flush (): Promise<void> {
+        if (this.disposed) {
+            return
+        }
+        await new Promise<void>((resolve, reject) => {
+            this.pendingFlushes.add(resolve)
+            try {
+                this.xterm.write('', () => {
+                    this.pendingFlushes.delete(resolve)
+                    resolve()
+                })
+            } catch (error) {
+                this.pendingFlushes.delete(resolve)
+                reject(error)
+            }
+        })
     }
 
     clear (): void {
@@ -662,9 +705,14 @@ export class XTermFrontend extends Frontend {
 
     private setFontSize () {
         const scale = Math.pow(1.1, this.zoom)
-        this.xterm.options.fontSize = this.configuredFontSize * scale
+        const fontSize = this.configuredFontSize * scale
         // eslint-disable-next-line @typescript-eslint/restrict-plus-operands
-        this.xterm.options.lineHeight = Math.max(1, (this.configuredFontSize + this.configuredLinePadding * 2) / this.configuredFontSize)
+        const lineHeight = Math.max(1, (this.configuredFontSize + this.configuredLinePadding * 2) / this.configuredFontSize)
+        if (this.xterm.options.fontSize === fontSize && this.xterm.options.lineHeight === lineHeight) {
+            return
+        }
+        this.xterm.options.fontSize = fontSize
+        this.xterm.options.lineHeight = lineHeight
         this.resizeHandler()
     }
 
@@ -720,6 +768,7 @@ export class XTermFrontend extends Frontend {
         if (this.rendererRecoveryAttempts < MAX_WEBGL_RECOVERY_ATTEMPTS) {
             this.rendererRecoveryAttempts++
             this.attachWebGLAddon()
+            this.webGLAddon?.clearTextureAtlas()
         }
         // Once the retry budget is exhausted xterm falls back to its DOM renderer.
         this.redraw()

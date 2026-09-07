@@ -20,6 +20,9 @@ export abstract class BaseSession {
     protected reportedCWD?: string
     private initialDataBuffer = Buffer.from('')
     private initialDataBufferReleased = false
+    private resolveInitialOutput: () => void
+    private initialOutputReady = new Promise<void>(resolve => { this.resolveInitialOutput = resolve })
+    private outputDrainHandler: (() => Promise<void>)|null = null
 
     get output$ (): Observable<string> { return this.output }
     get binaryOutput$ (): Observable<Buffer> { return this.binaryOutput }
@@ -52,11 +55,22 @@ export abstract class BaseSession {
         this.middleware.feedFromSession(data)
     }
 
+    /** Register the terminal consumer's processing barrier, not just IPC receipt. */
+    setOutputDrainHandler (handler: (() => Promise<void>)|null): void {
+        this.outputDrainHandler = handler
+    }
+
+    async waitForOutputDrain (): Promise<void> {
+        await this.initialOutputReady
+        await this.outputDrainHandler?.()
+    }
+
     releaseInitialDataBuffer (): void {
         this.initialDataBufferReleased = true
         this.output.next(this.initialDataBuffer.toString())
         this.binaryOutput.next(this.initialDataBuffer)
         this.initialDataBuffer = Buffer.from('')
+        this.resolveInitialOutput()
     }
 
     setLoginScriptsOptions (options: LoginScriptsOptions): void {
@@ -70,6 +84,9 @@ export abstract class BaseSession {
     }
 
     async destroy (): Promise<void> {
+        this.resolveInitialOutput()
+        this.outputDrainHandler = null
+        this.initialDataBuffer = Buffer.alloc(0)
         if (this.open) {
             this.logger.info('Destroying')
             this.open = false

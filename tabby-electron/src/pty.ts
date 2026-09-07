@@ -3,12 +3,17 @@ import { ipcRenderer } from 'electron'
 import { ChildProcess, PTYInterface, PTYProxy } from 'tabby-local'
 import { getWorkingDirectoryFromPID } from 'native-process-working-directory'
 import { getTerminalProcessTree } from './utils/processTree'
+import { createProcessListCache } from './utils/processListCache'
 
 /* eslint-disable block-scoped-var */
 
 try {
     var macOSNativeProcessList = require('macos-native-processlist')  // eslint-disable-line @typescript-eslint/no-var-requires, no-var
 } catch { }
+
+const getMacOSProcessList = createProcessListCache<{ pid: number, ppid: number, name: string }[]>(
+    () => macOSNativeProcessList.getProcessList(),
+)
 
 try {
     var windowsProcessTree = require('@tabby-gang/windows-process-tree')  // eslint-disable-line @typescript-eslint/no-var-requires, no-var
@@ -85,6 +90,8 @@ export class ElectronPTYProxy extends PTYProxy {
         for (const k of this.subscriptions.keys()) {
             ipcRenderer.off(k, this.subscriptions.get(k))
         }
+        this.subscriptions.clear()
+        ipcRenderer.send('pty:release', this.id)
     }
 
     async resize (columns: number, rows: number): Promise<void> {
@@ -103,7 +110,7 @@ export class ElectronPTYProxy extends PTYProxy {
         if (process.platform === 'darwin') {
             const terminalPID = await this.getPID()
             const truePID = await this.getTruePID()
-            const processes = await macOSNativeProcessList.getProcessList()
+            const processes = await getMacOSProcessList()
             const processTree: ChildProcess[] = processes.map(process => ({
                 pid: process.pid,
                 ppid: process.ppid,
@@ -116,7 +123,7 @@ export class ElectronPTYProxy extends PTYProxy {
 
     async getChildProcessesInternal (truePID: number): Promise<ChildProcess[]> {
         if (process.platform === 'darwin') {
-            const processes = await macOSNativeProcessList.getProcessList()
+            const processes = await getMacOSProcessList()
             return processes.filter(x => x.ppid === truePID).map(p => ({
                 pid: p.pid,
                 ppid: p.ppid,

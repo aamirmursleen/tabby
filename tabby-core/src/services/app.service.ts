@@ -1,5 +1,6 @@
 import { Injectable, Inject } from '@angular/core'
 import { NgbModal } from '@ng-bootstrap/ng-bootstrap'
+import { TranslateService } from '@ngx-translate/core'
 import { Observable, Subject, AsyncSubject, takeUntil, debounceTime } from 'rxjs'
 
 import { BaseTabComponent } from '../components/baseTab.component'
@@ -10,6 +11,7 @@ import { RecoveryToken } from '../api/tabRecovery'
 import { BootstrapData, BOOTSTRAP_DATA } from '../api/mainProcess'
 import { HostWindowService } from '../api/hostWindow'
 import { HostAppService } from '../api/hostApp'
+import { PlatformService } from '../api/platform'
 
 import { ConfigService } from './config.service'
 import { TabRecoveryService } from './tabRecovery.service'
@@ -52,6 +54,7 @@ export class AppService {
     private lastTabIndex = 0
     private _activeTab: BaseTabComponent | null = null
     private closedTabsStack: RecoveryToken[] = []
+    private closingWindow = false
 
     private activeTabChange = new Subject<BaseTabComponent|null>()
     private tabsChanged = new Subject<void>()
@@ -83,6 +86,8 @@ export class AppService {
         private tabsService: TabsService,
         private selector: SelectorService,
         private ngbModal: NgbModal,
+        private platform: PlatformService,
+        private translate: TranslateService,
         @Inject(BOOTSTRAP_DATA) private bootstrapData: BootstrapData,
     ) {
         this.tabsChanged$.subscribe(() => {
@@ -94,7 +99,9 @@ export class AppService {
         }, 30000)
 
         this.recoveryStateChangedHint.pipe(debounceTime(1000)).subscribe(() => {
-            this.tabRecovery.saveTabs(this.tabs)
+            this.tabRecovery.saveTabs(this.tabs).catch(error => {
+                this.tabRecovery.logger.warn('Could not save workspace recovery state:', error)
+            })
         })
 
         config.ready$.toPromise().then(async () => {
@@ -459,25 +466,69 @@ export class AppService {
     /**
      * Attempts to close all tabs, returns false if one of the tabs blocked closure
      */
-    async closeAllTabs (): Promise<boolean> {
-        for (const tab of this.tabs) {
-            if (!await tab.canClose()) {
-                return false
+    async closeAllTabs (checkCanClose = true): Promise<boolean> {
+        if (checkCanClose) {
+            for (const tab of this.tabs) {
+                if (!await tab.canClose()) {
+                    return false
+                }
             }
         }
-        for (const tab of this.tabs) {
+        for (const tab of [...this.tabs]) {
             tab.destroy(true)
         }
         return true
     }
 
     async closeWindow (): Promise<void> {
-        this.tabRecovery.enabled = false
-        await this.tabRecovery.saveTabs(this.tabs)
-        if (await this.closeAllTabs()) {
-            this.hostWindow.close()
-        } else {
-            this.tabRecovery.enabled = true
+        if (this.closingWindow) {
+            return
+        }
+        this.closingWindow = true
+        const recoveryWasEnabled = this.tabRecovery.enabled
+        let closed = false
+        try {
+            if (this.tabs.length) {
+                const result = await this.platform.showMessageBox({
+                    type: 'warning',
+                    message: this.translate.instant('Close all tabs and save this workspace?'),
+                    detail: this.translate.instant('Your tabs and supported sessions will be restored next time you open Tabby. Running processes will stop.'),
+                    buttons: [this.translate.instant('Save sessions and close all tabs'), this.translate.instant('Cancel')],
+                    defaultId: 1,
+                    cancelId: 1,
+                })
+                if (result.response !== 0) {
+                    return
+                }
+                if (!this.config.store.recoverTabs) {
+                    this.config.store.recoverTabs = true
+                    try {
+                        await this.config.save()
+                    } catch (error) {
+                        this.config.store.recoverTabs = false
+                        throw error
+                    }
+                }
+            }
+            await this.tabRecovery.saveTabs(this.tabs)
+            this.tabRecovery.enabled = false
+            if (await this.closeAllTabs(false)) {
+                this.hostWindow.close()
+                closed = true
+            }
+        } catch (error) {
+            this.tabRecovery.logger.warn('Could not save and close the workspace:', error)
+            await this.platform.showMessageBox({
+                type: 'error',
+                message: this.translate.instant('Could not save and close the workspace'),
+                detail: this.translate.instant('Tabby has been left open. Check the log and try again.'),
+                buttons: [this.translate.instant('OK')],
+            })
+        } finally {
+            if (!closed) {
+                this.tabRecovery.enabled = recoveryWasEnabled
+            }
+            this.closingWindow = false
         }
     }
 

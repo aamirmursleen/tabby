@@ -10,6 +10,9 @@ import { NewTabParameters } from './tabs.service'
 export class TabRecoveryService {
     logger: Logger
     enabled = false
+    private pendingSave: BaseTabComponent[]|null = null
+    private saveInProgress: Promise<void>|null = null
+    private lastGoodTokens = new WeakMap<BaseTabComponent, RecoveryToken>()
 
     private constructor (
         @Inject(TabRecoveryProvider) private tabRecoveryProviders: TabRecoveryProvider<BaseTabComponent>[]|null,
@@ -23,11 +26,35 @@ export class TabRecoveryService {
         if (!this.enabled || !this.config.store.recoverTabs) {
             return
         }
-        window.localStorage.tabsRecovery = JSON.stringify(
-            (await Promise.all(
-                tabs.map(async tab => this.getFullRecoveryToken(tab, { includeState: true })),
-            )).filter(token => !!token),
-        )
+        // Coalesce bursts and serialize snapshots so a slow, older save cannot
+        // overwrite a newer workspace. Do not retain the caller's mutable array.
+        this.pendingSave = [...tabs]
+        this.saveInProgress ??= this.flushPendingSaves().finally(() => {
+            this.saveInProgress = null
+        })
+        await this.saveInProgress
+    }
+
+    private async flushPendingSaves (): Promise<void> {
+        while (this.pendingSave) {
+            const tabs = this.pendingSave
+            this.pendingSave = null
+            const tokens = await Promise.all(tabs.map(async tab => {
+                try {
+                    const token = await this.getFullRecoveryToken(tab, { includeState: true })
+                    if (token) {
+                        this.lastGoodTokens.set(tab, token)
+                    } else {
+                        this.lastGoodTokens.delete(tab)
+                    }
+                    return token
+                } catch (error) {
+                    this.logger.warn('Could not snapshot a tab; retaining its last good recovery state:', error)
+                    return this.lastGoodTokens.get(tab) ?? null
+                }
+            }))
+            window.localStorage.tabsRecovery = JSON.stringify(tokens.filter(token => !!token))
+        }
     }
 
     async getFullRecoveryToken (tab: BaseTabComponent, options?: GetRecoveryTokenOptions): Promise<RecoveryToken|null> {

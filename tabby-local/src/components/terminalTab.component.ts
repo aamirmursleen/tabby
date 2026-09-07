@@ -4,7 +4,8 @@ import { BaseTabProcess, WIN_BUILD_CONPTY_SUPPORTED, isWindowsBuild, GetRecovery
 import { BaseTerminalTabComponent } from 'tabby-terminal'
 import { LocalProfile, SessionOptions, UACService } from '../api'
 import { Session } from '../session'
-import { getCodexRecoveryCommand } from '../utils/codexRecovery'
+import { buildCodexRecoveryOptions, getCodexRecoveryCommand } from '../utils/codexRecovery'
+import { findCodexSession } from '../utils/codexSession'
 
 /** @hidden */
 @Component({
@@ -16,6 +17,7 @@ import { getCodexRecoveryCommand } from '../utils/codexRecovery'
 export class TerminalTabComponent extends BaseTerminalTabComponent<LocalProfile> {
     @Input() sessionOptions: SessionOptions // Deprecated
     @Input() recoveryCommand: string|null = null
+    @Input() recovered = false
     session: Session|null = null
 
     // eslint-disable-next-line @typescript-eslint/no-useless-constructor
@@ -48,10 +50,19 @@ export class TerminalTabComponent extends BaseTerminalTabComponent<LocalProfile>
         })
 
         super.ngOnInit()
+        // Renderer attachment is lazy, but restoring a workspace must start
+        // background sessions too. Output stays bounded until their first view.
+        if (this.recovered) {
+            this.initializeSession(80, 30)
+        }
     }
 
     protected onFrontendReady (): void {
-        this.initializeSession(this.size.columns, this.size.rows)
+        if (this.session) {
+            this.session.resize(this.size.columns, this.size.rows)
+        } else {
+            this.initializeSession(this.size.columns, this.size.rows)
+        }
         this.savedStateIsLive = this.profile.options.restoreFromPTYID === this.session?.getID()
         super.onFrontendReady()
     }
@@ -67,33 +78,33 @@ export class TerminalTabComponent extends BaseTerminalTabComponent<LocalProfile>
             }
         }
 
-        const sessionStart = session.start({
-            ...this.profile.options,
+        const recoveryCommand = this.recoveryCommand
+        this.recoveryCommand = null
+        const recoveryOptions = buildCodexRecoveryOptions(this.profile.options, recoveryCommand)
+        session.start({
+            ...recoveryOptions ?? this.profile.options,
             width: columns,
             height: rows,
+        }).catch(error => {
+            this.logger.warn('Could not start terminal session:', error)
         })
 
         this.setSession(session)
-        sessionStart.then(() => {
-            const recoveryCommand = this.recoveryCommand
-            this.recoveryCommand = null
-            if (recoveryCommand && !session.restoredFromPTY) {
-                setTimeout(() => {
-                    if (this.session === session && session.open) {
-                        this.sendInput(`${recoveryCommand}\r`)
-                    }
-                }, 100)
-            }
-        })
         this.recoveryStateChangedHint.next()
     }
 
     async getRecoveryToken (options?: GetRecoveryTokenOptions): Promise<any> {
-        const cwd = this.session ? await this.session.getWorkingDirectory() : null
+        let cwd = this.session ? await this.session.getWorkingDirectory() : null
         let recoveryCommand: string|null = null
         if (options?.includeState && this.session) {
             try {
-                recoveryCommand = getCodexRecoveryCommand(await this.session.getChildProcesses())
+                const processes = await this.session.getChildProcesses()
+                recoveryCommand = getCodexRecoveryCommand(processes)
+                const codexSession = await findCodexSession(processes)
+                if (codexSession) {
+                    recoveryCommand = getCodexRecoveryCommand(processes, codexSession.id)
+                    cwd = codexSession.cwd
+                }
             } catch (error) {
                 this.logger.warn('Could not inspect terminal processes for recovery:', error)
             }
@@ -108,7 +119,7 @@ export class TerminalTabComponent extends BaseTerminalTabComponent<LocalProfile>
                     restoreFromPTYID: options?.includeState && this.session?.getID(),
                 },
             },
-            savedState: options?.includeState && this.frontend?.saveState(),
+            savedState: options?.includeState && (this.frontendIsReady ? this.frontend?.saveState() : this.savedState),
             recoveryCommand,
         }
     }
