@@ -22,8 +22,9 @@ async function main () {
             options: { command: '/bin/sh', args: [path.join(__dirname, 'fixtures/packaged-smoke.sh')], cwd: profile },
         }],
     }))
-    execFileSync('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', '--options', 'runtime',
-        '--entitlements', path.resolve(__dirname, '../../build/mac/entitlements.plist'), bundle])
+    // No Developer ID is available for this local development build. Ad-hoc
+    // signatures have no Team ID and cannot satisfy hardened library validation.
+    execFileSync('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', '--options', '0', bundle])
     const child = spawn(path.join(bundle, 'Contents/MacOS/Tabby Custom'), ['--hidden'], {
         env: { ...process.env, TABBY_PACKAGED_SMOKE_PROFILE: profile, TABBY_CONFIG_DIRECTORY: profile, TABBY_DEV: '', TABBY_PLUGINS: '' },
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -35,7 +36,7 @@ async function main () {
     child.on('error', error => { spawnError = error })
     try {
         const deadline = Date.now() + 30000
-        while (!fs.existsSync(path.join(profile, 'pty-output')) && Date.now() < deadline && child.exitCode === null && !spawnError) {
+        while (!fs.existsSync(path.join(profile, 'pty-output')) && Date.now() < deadline && child.exitCode === null && child.signalCode === null && !spawnError) {
             await new Promise(resolve => setTimeout(resolve, 100))
         }
         if (spawnError) { throw spawnError }
@@ -45,7 +46,7 @@ async function main () {
         console.error(logs)
         throw error
     } finally {
-        if (child.exitCode === null && child.pid) {
+        if (child.exitCode === null && child.signalCode === null && child.pid) {
             const exited = new Promise(resolve => child.once('exit', resolve))
             child.kill('SIGTERM')
             await exited

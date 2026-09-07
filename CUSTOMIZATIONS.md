@@ -56,4 +56,4 @@ node test/e2e/packaged.cjs 'dist/custom-arm64/mac-arm64/Tabby Custom.app'
 
 The local ARM64 build is installed separately as **Tabby Custom.app**. Quit the old Tabby yourself when ready, then open the custom app. Both use the existing Tabby profile, so do not run both against that profile simultaneously. Keep the original app as a rollback option. The first switch can only restore information that the old version actually saved; exact UUID recovery applies to sessions saved by this fork.
 
-This local build is ad-hoc signed, not notarized. Update it from this fork; an upstream stock-app update would not include these customizations.
+This local development build is ad-hoc signed, not notarized, and does not enable Apple's hardened runtime: ad-hoc signatures have no Developer Team ID for library validation. Electron's configured security fuses remain enabled. A hardened, notarized distribution build requires a valid Apple Developer ID certificate. Update from this fork; an upstream stock-app update would not include these customizations.
