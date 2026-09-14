@@ -1,5 +1,6 @@
 import { Component, Input, ViewChild, ElementRef } from '@angular/core'
 import { BaseTabComponent } from './baseTab.component'
+import { SplitTabComponent } from './splitTab.component'
 import { AppService } from '../services/app.service'
 import { getOpenTabLabel } from '../utils/openTabs'
 
@@ -15,6 +16,13 @@ import { getOpenTabLabel } from '../utils/openTabs'
                 [(ngModel)]="draft" (keydown.enter)="save(); $event.stopPropagation()"
                 (keydown.escape)="cancel(); $event.stopPropagation()" (blur)="save()"
                 (click)="$event.stopPropagation()" maxlength="120">
+            <button *ngIf="canMaximize" type="button" class="pane-expand" [class.expanded]="maximized"
+                (click)="toggleMaximize(); $event.stopPropagation()" [attr.aria-pressed]="maximized"
+                [attr.aria-label]="maximized ? 'Restore split layout' : 'Expand pane'"
+                [title]="maximized ? 'Restore split layout (Esc)' : 'Expand pane'">
+                <i class="fas" [class.fa-expand]="!maximized" [class.fa-compress]="maximized" aria-hidden="true"></i>
+                <span *ngIf="maximized" aria-hidden="true">Esc</span>
+            </button>
         </div>
     `,
     styleUrls: ['./terminalPaneHeader.component.scss'],
@@ -32,6 +40,24 @@ export class TerminalPaneHeaderComponent {
     constructor (private app: AppService) { }
 
     get label (): string { return getOpenTabLabel(this.tab, 0) }
+
+    get canMaximize (): boolean {
+        return this.tab.parent instanceof SplitTabComponent && this.tab.parent.getAllTabs().length > 1
+    }
+
+    get maximized (): boolean {
+        return this.tab.parent instanceof SplitTabComponent && this.tab.parent.getMaximizedTab() === this.tab
+    }
+
+    toggleMaximize (): void {
+        const parent = this.tab.parent
+        if (!(parent instanceof SplitTabComponent) || !this.canMaximize) {
+            return
+        }
+        const restore = this.maximized
+        parent.focus(this.tab)
+        parent.maximize(restore ? null : this.tab)
+    }
 
     startRename (): void {
         this.draft = this.label

@@ -3,6 +3,7 @@
     height: 32px;
     display: flex;
     align-items: center;
+    gap: 6px;
     padding: 2px 8px;
     border-left: 3px solid transparent;
     border-bottom: 1px solid rgba(127, 127, 127, .2);
@@ -13,7 +14,7 @@
     display: flex;
     align-items: center;
     gap: 9px;
-    width: 100%;
+    flex: 1;
     min-width: 0;
     border: 0;
     background: transparent;
@@ -25,4 +26,27 @@
     .edit-icon { margin-left: auto; opacity: .45; }
     &:hover .edit-icon { opacity: 1; }
 }
-input { height: 26px; }
+input { height: 26px; flex: 1; min-width: 0; width: 0; }
+.pane-expand {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    min-width: 28px;
+    height: 26px;
+    padding: 0 7px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    opacity: .7;
+    cursor: pointer;
+    font-size: 12px;
+    span { font-size: 10px; }
+    &:hover, &.expanded { opacity: 1; background: rgba(127, 127, 127, .18); }
+}
+.pane-name:focus-visible, .pane-expand:focus-visible {
+    outline: 2px solid var(--theme-primary);
+    outline-offset: -2px;
+}

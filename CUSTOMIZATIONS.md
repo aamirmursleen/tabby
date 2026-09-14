@@ -26,6 +26,16 @@ open -a 'Aamir Terminal'
 
 Every terminal has a permanent name bar. Click to rename; Enter or clicking away saves, Escape cancels. Clearing the name restores the profile/live-title fallback. Pane names use existing workspace recovery storage.
 
+Version `1.0.236-aamir.8` adds an **Expand pane** button beside the pencil in each split pane's name bar. It fills the terminal area; click **Restore split layout** or press **Esc** to return to the same pane positions and sizes. The existing macOS shortcut, **Command–Option–Enter**, uses the same view. A single pane already fills the area and does not show an expansion button.
+
+Expansion keeps the live tabs and split proportions. Escape is captured before terminal input only while expanded; ordinary terminal Escape, rename cancellation, and editor shortcuts remain available. Closing an expanded pane reveals and focuses a remaining terminal. Resizing the app while expanded preserves the split proportions when restored.
+
+Verification: 155 regression tests, core/terminal TypeScript, core lint and webpack. `test/integration/paneMaximize.cjs` mounts the actual Angular header and split components with real xterm instances in isolated Chromium. It checks all four unequal panes, expand/restore clicks, Escape and key repeat without terminal input leakage, rename/sidebar isolation, terminal dimensions and restoration after window resize. The test uses synthetic output and opens no Electron app, shell, SSH session or user profile; live app interaction remains unverified.
+
+```sh
+TABBY_PLAYWRIGHT_PATH=/path/to/playwright node test/integration/paneMaximize.cjs
+```
+
 The **Snippets** toolbar button opens a compact sidebar inspired by Termius, with green Run/Paste actions and short command previews. Create snippets, assign them to groups, rename groups, collapse sections, and search by title, command text or group name. Sort commands by name A–Z/Z–A, newest first, or recently updated. Deleting a group moves its snippets to Ungrouped; deleting a snippet requires its own confirmation.
 
 **Run** sends the saved command followed by Enter only to the selected pane's current program. **Paste** inserts without Enter, using bracketed paste when available; multiline paste is rejected if the destination cannot handle it without execution. The editor isolates keyboard shortcuts from terminal shortcuts. Saving or restoring a snippet never runs it automatically.

@@ -1,5 +1,5 @@
-import { Observable, Subject, takeWhile } from 'rxjs'
-import { Component, Injectable, ViewChild, ViewContainerRef, EmbeddedViewRef, AfterViewInit, OnDestroy, Injector } from '@angular/core'
+import { Observable, Subject, takeWhile, fromEvent } from 'rxjs'
+import { Component, Injectable, ViewChild, ViewContainerRef, EmbeddedViewRef, AfterViewInit, OnDestroy, Injector, ElementRef } from '@angular/core'
 import { BaseTabComponent, BaseTabProcess, GetRecoveryTokenOptions } from './baseTab.component'
 import { TabRecoveryProvider, RecoveryToken } from '../api/tabRecovery'
 import { TabsService, NewTabParameters } from '../services/tabs.service'
@@ -222,6 +222,7 @@ export class SplitTabComponent extends BaseTabComponent implements AfterViewInit
     /** @hidden */
     private focusedTab: BaseTabComponent|null = null
     private maximizedTab: BaseTabComponent|null = null
+    private restoreEscapePressed = false
     private viewRefs: Map<BaseTabComponent, EmbeddedViewRef<any>> = new Map()
 
     private tabAdded = new Subject<BaseTabComponent>()
@@ -265,6 +266,19 @@ export class SplitTabComponent extends BaseTabComponent implements AfterViewInit
         super(injector)
         this.root = new SplitContainer()
         this.setTitle('')
+
+        // Capture before xterm handles the key, scoped to this split's DOM.
+        // Other editors (rename/search/dialogs) retain their own Escape action.
+        const element: HTMLElement = injector.get(ElementRef).nativeElement
+        for (const type of ['keydown', 'keyup']) {
+            this.addEventListenerUntilDestroyed(element, type, event => this.onPaneKeyEvent(event as KeyboardEvent), { capture: true })
+        }
+        this.addEventListenerUntilDestroyed(element, 'focusout', event => {
+            if (!element.contains((event as FocusEvent).relatedTarget as Node|null)) {
+                this.restoreEscapePressed = false
+            }
+        })
+        this.subscribeUntilDestroyed(fromEvent(window, 'blur'), () => { this.restoreEscapePressed = false })
 
         this.focused$.subscribe(() => {
             this.getAllTabs().forEach(x => x.emitFocused())
@@ -435,6 +449,33 @@ export class SplitTabComponent extends BaseTabComponent implements AfterViewInit
         this.layout()
     }
 
+    private onPaneKeyEvent (event: KeyboardEvent): void {
+        if (event.key !== 'Escape') {
+            return
+        }
+        if (this.restoreEscapePressed) {
+            event.preventDefault()
+            event.stopPropagation()
+            if (event.type === 'keyup') {
+                this.restoreEscapePressed = false
+            }
+            return
+        }
+        if (event.type !== 'keydown' || !this.maximizedTab || event.defaultPrevented || event.isComposing ||
+            event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) {
+            return
+        }
+        const target = event.target as HTMLElement|null
+        if (target?.closest('input, textarea:not(.xterm-helper-textarea), select, [contenteditable]:not([contenteditable="false"]), [role="dialog"], [role="menu"]')) {
+            return
+        }
+        this.restoreEscapePressed = true
+        event.preventDefault()
+        event.stopPropagation()
+        this.maximize(null)
+        this.getFocusedTab()?.emitFocused()
+    }
+
     /**
      * Focuses the first available tab inside the given [[SplitContainer]]
      */
@@ -544,6 +585,12 @@ export class SplitTabComponent extends BaseTabComponent implements AfterViewInit
         tab.removeFromContainer()
         tab.parent = null
         this.viewRefs.delete(tab)
+        if (this.maximizedTab === tab) {
+            this.maximizedTab = null
+        }
+        if (this.focusedTab === tab) {
+            this.focusedTab = null
+        }
 
         this.layout()
 
@@ -551,7 +598,7 @@ export class SplitTabComponent extends BaseTabComponent implements AfterViewInit
         if (this.root.children.length === 0) {
             this.destroy()
         } else {
-            this.focusAnyIn(parent)
+            this.focusAnyIn(parent.getAllTabs().length ? parent : this.root)
         }
     }
 
@@ -962,10 +1009,10 @@ export class SplitTabComponent extends BaseTabComponent implements AfterViewInit
                     element.style.height = `${childH}%`
 
                     if (child === this.maximizedTab) {
-                        element.style.left = '5%'
-                        element.style.top = '5%'
-                        element.style.width = '90%'
-                        element.style.height = '90%'
+                        element.style.left = '0%'
+                        element.style.top = '0%'
+                        element.style.width = '100%'
+                        element.style.height = '100%'
                     }
                 }
             }
