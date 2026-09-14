@@ -46,6 +46,30 @@ macOS can separately request permission for Aamir Terminal Helper (Renderer) to 
 
 Verification: 128 regression tests, SSH TypeScript and lint, and native parsing tests with generated encrypted OpenSSH and PKCS8 keys. Tests cover four concurrent unlocks, credential reload, wrong input, cancellation and storage failures. Credential storage and dialogs use test doubles; no live server authentication or real passphrase extraction was performed.
 
+## Rendering when opening another window
+
+Version `1.0.236-aamir.6` repairs terminal glyph recovery when another window takes focus. Visible panes can recover lost WebGL contexts without keyboard focus; automatic context restoration and focus handoffs also refresh the glyph cache. Atlas clears are batched before all pane models are rebuilt, avoiding the shared-cache corruption documented in [xterm.js #6014](https://github.com/xtermjs/xterm.js/issues/6014). A failed WebGL allocation leaves xterm's fallback renderer usable, with bounded retries. Recovery changes rendering only; it preserves the terminal buffer, scroll position and selection.
+
+Verification: all 136 regression tests, terminal TypeScript/lint and webpack pass. `test/integration/renderer.cjs` runs the actual installed xterm/WebGL libraries in an isolated Chromium test with four panes and a second page. It forces real WebGL context loss and restoration and checks glyph pixels before/after; the original code fails the unfocused recovery case and the fix passes all cases. The test opens no Electron app, shell, SSH connection or user profile. Physical multi-monitor app interaction remains unverified.
+
+```sh
+TABBY_PLAYWRIGHT_PATH=/path/to/playwright node test/integration/renderer.cjs
+```
+
+## Saved tab layouts
+
+Version `1.0.236-aamir.7` adds **Saved layouts** immediately beside **Snippets** in the toolbar. Arrange a tab, choose **Save current tab**, name it, and save. Each card previews the actual split proportions and has Open, Rename, Replace with current tab, and Delete actions. Search matches layout and pane names. Opening creates a new tab without closing current terminals.
+
+Layouts use the existing `split-layout` profile format and remain available through the profile picker. Saves preserve nested splits, pane names, colors, local folders and the focused pane. Snapshot arrays are cloned so later resizing and repeated opens cannot alter the saved layout. Writes are serialized and rolled back on failure; invalid imported layouts remain stored with repair feedback. Pane providers are checked before opening.
+
+Layouts reconnect terminals using their profile settings; terminal output, live PTY IDs and running commands are excluded. Passwords and passphrases are omitted from the layout snapshot and are resolved from the current connection profile or existing credential storage when reopened.
+
+Verification: 148 regression tests, core/terminal TypeScript and lint, Angular template compilation, and webpack. The actual split recovery code reproduces four unequal pane positions in a regression test. An isolated Chromium test mounts the real Angular Saved layouts component and exercises save, open, rename, replace, search, reload, delete and failed-save preservation, including the preview's click behavior and keyboard isolation. Its app/recovery adapters are test doubles, so it does not authenticate to live servers.
+
+```sh
+TABBY_PLAYWRIGHT_PATH=/path/to/playwright node test/integration/savedLayouts.cjs
+```
+
 ## Workspace close and restoration
 
 Closing the window or choosing Quit asks once: **Close program (restore sessions)**, **Close all terminals (no restore)**, or **Cancel**. The default saves the workspace before terminals close and enables startup restoration if necessary. The no-restore choice drains pending autosaves and clears the saved workspace; cancellation and failed saves leave sessions intact. Secondary windows cannot erase the main window’s saved workspace. The individual tab close button still asks for confirmation.

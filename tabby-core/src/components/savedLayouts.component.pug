@@ -1,0 +1,63 @@
+header.sidebar-header
+    .sidebar-title
+        .snippet-emblem(aria-hidden='true')
+            i.fas.fa-columns
+        h2 Saved layouts
+        span.total-count {{layouts.savedLayouts.length}}
+        button.icon-button.close-sidebar(aria-label='Close saved layouts', (click)='close()')
+            i.fas.fa-times
+    button.accent-button.save-current([disabled]='busy || !app.activeTab || !!layouts.validationError', (click)='startSave()')
+        i.fas.fa-plus(aria-hidden='true')
+        | Save current tab
+    .search-box(*ngIf='!editor')
+        i.fas.fa-search(aria-hidden='true')
+        input(aria-label='Search saved layouts', placeholder='Search layouts or panes', [(ngModel)]='query')
+
+.sidebar-scroll
+    .feedback.error(*ngIf='layouts.validationError', role='alert') {{layouts.validationError}}
+    form.layout-editor(*ngIf='editor', (ngSubmit)='save()')
+        .editor-heading
+            i.fas.fa-columns(aria-hidden='true')
+            strong {{editor.sourceTab ? (editor.id ? 'Replace saved layout' : 'Save this tab') : 'Rename layout'}}
+        p.editor-description(*ngIf='editor.sourceTab') Save pane names, connections, local folders and split sizes in this tab.
+        p.editor-description(*ngIf='editor.sourceTab && editor.id') This will replace the layout saved under this name.
+        label(for='layout-name') Layout name
+        input#layout-name.editor-input(name='layoutName', aria-label='Layout name', [(ngModel)]='editor.name', maxlength='100', [disabled]='busy', autofocus)
+        .editor-actions
+            button.subtle-button(type='button', [disabled]='busy', (click)='editor = null') Cancel
+            button.accent-button(type='submit', [disabled]='busy || !editor.name.trim()') {{busy ? 'Saving…' : 'Save layout'}}
+
+    ng-container(*ngIf='!editor')
+        .empty-state(*ngIf='entries.length == 0')
+            .empty-emblem(aria-hidden='true')
+                i.fas.fa-columns
+            strong {{query ? 'No matching layouts' : 'Your workspace, ready to reopen'}}
+            p {{query ? 'Try another layout or pane name.' : 'Arrange your panes, then save the tab. Open it here whenever you need the same setup.'}}
+        article.layout-card(*ngFor='let layout of entries; trackBy: trackByID')
+            button.layout-open([attr.aria-label]='"Open layout " + layout.name', [disabled]='busy', (click)='open(layout)')
+                .layout-preview(aria-hidden='true')
+                    span.preview-pane(*ngFor='let pane of preview(layout); trackBy: trackPane', [style.left.%]='pane.x', [style.top.%]='pane.y', [style.width.%]='pane.width', [style.height.%]='pane.height')
+                        span {{pane.name}}
+                .layout-title-row
+                    strong {{layout.name}}
+                    span.open-label Open
+            .layout-details
+                span {{layouts.getPaneCount(layout)}} {{layouts.getPaneCount(layout) == 1 ? 'pane' : 'panes'}}
+                .layout-actions
+                    button.icon-button([attr.aria-label]='"Rename layout " + layout.name', title='Rename layout', [disabled]='busy', (click)='rename(layout)')
+                        i.fas.fa-pen
+                    button.icon-button([attr.aria-label]='"Replace layout " + layout.name + " with current tab"', title='Replace with current tab', [disabled]='busy || !app.activeTab', (click)='startSave(layout)')
+                        i.fas.fa-save
+                    button.icon-button([attr.aria-label]='"Delete layout " + layout.name', title='Delete layout', [disabled]='busy', (click)='deleting = layout')
+                        i.fas.fa-trash-alt
+            .inline-confirm(*ngIf='deleting?.id == layout.id')
+                strong Delete this saved layout?
+                p Your open terminals will stay open.
+                .confirm-actions
+                    button.subtle-button([disabled]='busy', (click)='deleting = null') Cancel
+                    button.danger-button([disabled]='busy', (click)='remove()') Delete layout
+
+footer.sidebar-footer
+    .feedback.error(*ngIf='error', role='alert') {{error}}
+    .feedback.status(role='status', aria-live='polite') {{status}}
+    p.layout-help Open creates a new tab and reconnects its terminals. Running commands and terminal output are not saved.

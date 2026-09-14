@@ -379,6 +379,11 @@ export class SplitTabComponent extends BaseTabComponent implements AfterViewInit
                     for (const tab of this.getAllTabs()) {
                         this.focus(tab)
                     }
+                    const savedIndex = this._recoveredState.focusedTabIndex
+                    const tabs = this.getAllTabs()
+                    if (Number.isInteger(savedIndex) && savedIndex >= 0 && savedIndex < tabs.length) {
+                        this.focus(tabs[savedIndex])
+                    }
                 }
             }, 100)
 
@@ -738,7 +743,10 @@ export class SplitTabComponent extends BaseTabComponent implements AfterViewInit
 
     /** @hidden */
     async getRecoveryToken (options?: GetRecoveryTokenOptions): Promise<any> {
-        return this.root.serialize(this.tabRecovery, options)
+        return {
+            ...await this.root.serialize(this.tabRecovery, options),
+            focusedTabIndex: this.getAllTabs().indexOf(this.getFocusedTab()!),
+        }
     }
 
     /** @hidden */

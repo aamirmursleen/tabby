@@ -12,6 +12,7 @@ import '@angular/localize/init'
 
 import { TerminalPaneHeaderComponent } from './components/terminalPaneHeader.component'
 import { WorkspaceToolsComponent } from './components/workspaceTools.component'
+import { SavedLayoutsComponent } from './components/savedLayouts.component'
 
 import { AppRootComponent } from './components/appRoot.component'
 import { CheckboxComponent } from './components/checkbox.component'
@@ -111,6 +112,7 @@ const PROVIDERS = [
     ],
     declarations: [
         WorkspaceToolsComponent,
+        SavedLayoutsComponent,
         AppRootComponent,
         TerminalPaneHeaderComponent,
         CheckboxComponent,

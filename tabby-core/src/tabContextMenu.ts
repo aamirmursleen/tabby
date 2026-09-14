@@ -13,6 +13,7 @@ import { TabsService } from './services/tabs.service'
 import { HotkeysService } from './services/hotkeys.service'
 import { PromptModalComponent } from './components/promptModal.component'
 import { SplitLayoutProfilesService } from './profiles'
+import { NotificationsService } from './services/notifications.service'
 import { TAB_COLORS } from './utils'
 
 /** @hidden */
@@ -107,6 +108,7 @@ export class CommonOptionsContextMenu extends TabContextMenuItemProvider {
         private ngbModal: NgbModal,
         private splitLayoutProfilesService: SplitLayoutProfilesService,
         private translate: TranslateService,
+        private notifications: NotificationsService,
     ) {
         super()
     }
@@ -161,7 +163,12 @@ export class CommonOptionsContextMenu extends TabContextMenuItemProvider {
                         if (!name) {
                             return
                         }
-                        this.splitLayoutProfilesService.createProfile(tab, name)
+                        try {
+                            await this.splitLayoutProfilesService.createProfile(tab, name)
+                            this.notifications.notice(this.translate.instant('Layout saved'))
+                        } catch (error) {
+                            this.notifications.error(error instanceof Error ? error.message : this.translate.instant('Could not save layout'))
+                        }
                     },
                 })
             }

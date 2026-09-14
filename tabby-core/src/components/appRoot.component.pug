@@ -85,9 +85,16 @@ title-bar(
                     ngbTooltip='Snippets',
                     aria-label='Snippets',
                     [attr.aria-expanded]='workspaceToolsOpen',
-                    (click)='workspaceToolsOpen = !workspaceToolsOpen'
+                    (click)='workspaceToolsOpen = !workspaceToolsOpen; savedLayoutsOpen = false'
                 )
                     i.fas.fa-code
+                button.btn.btn-secondary.btn-tab-bar(
+                    ngbTooltip='Saved layouts',
+                    aria-label='Saved layouts',
+                    [attr.aria-expanded]='savedLayoutsOpen',
+                    (click)='savedLayoutsOpen = !savedLayoutsOpen; workspaceToolsOpen = false'
+                )
+                    i.fas.fa-columns
                 .d-flex(
                     ngbDropdown,
                     container='body',
@@ -143,5 +150,6 @@ title-bar(
             )
 
     workspace-tools(*ngIf='ready', [hidden]='!workspaceToolsOpen', (closed)='workspaceToolsOpen = false')
+    saved-layouts(*ngIf='ready', [hidden]='!savedLayoutsOpen', (closed)='savedLayoutsOpen = false')
 
 ng-template(ngbModalContainer)

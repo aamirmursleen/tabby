@@ -77,6 +77,7 @@ export class AppRootComponent {
     updatesAvailable = false
     activeTransfers: FileTransfer[] = []
     workspaceToolsOpen = false
+    savedLayoutsOpen = false
     openTabsMenuOpen = false
     private logger: Logger
 

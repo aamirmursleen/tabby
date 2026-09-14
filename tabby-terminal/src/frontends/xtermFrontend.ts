@@ -75,6 +75,9 @@ class FlowControl {
 
 /** @hidden */
 export class XTermFrontend extends Frontend {
+    private static attachedFrontends = new Set<XTermFrontend>()
+    private static rendererRefreshPending = false
+
     enableResizing = true
     xterm: Terminal
     protected xtermCore: any
@@ -317,32 +320,40 @@ export class XTermFrontend extends Frontend {
 
         this.xterm.open(host)
         this.opened = true
+        XTermFrontend.attachedFrontends.add(this)
 
         // Work around font loading bugs
         await new Promise(resolve => setTimeout(resolve, this.hostApp.platform === Platform.Web ? 1000 : 0))
+        if (this.disposed) {
+            return
+        }
 
         // Just configure the colors to avoid a flash
         this.configureColors(profile.terminalColorScheme)
 
         if (this.enableWebGL) {
             this.attachWebGLAddon()
-            this.platformService.displayMetricsChanged$.pipe(
-                takeUntil(this.destroyed$),
-            ).subscribe(() => {
-                this.webGLAddon?.clearTextureAtlas()
-            })
         } else {
             this.canvasAddon = new CanvasAddon()
             this.xterm.loadAddon(this.canvasAddon)
-            this.platformService.displayMetricsChanged$.pipe(
-                takeUntil(this.destroyed$),
-            ).subscribe(() => {
-                this.canvasAddon?.clearTextureAtlas()
-            })
         }
+        this.platformService.displayMetricsChanged$.pipe(
+            takeUntil(this.destroyed$),
+        ).subscribe(() => this.scheduleRendererRefresh())
+
+        // xterm restores short-lived context losses internally without firing
+        // onContextLoss. Refresh every pane after that restoration has finished.
+        fromEvent(host, 'webglcontextrestored', { capture: true }).pipe(
+            takeUntil(this.destroyed$),
+        ).subscribe(() => this.scheduleRendererRefresh())
 
         // Allow an animation frame
         await new Promise(r => setTimeout(r, 100))
+        // Destruction can happen during the await; TypeScript keeps the earlier narrowing.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (this.disposed) {
+            return
+        }
 
         this.ready.next()
         this.ready.complete()
@@ -355,11 +366,18 @@ export class XTermFrontend extends Frontend {
 
         window.addEventListener('resize', this.resizeHandler)
 
-        // The GPU context is often dropped while the app is in the background;
-        // retry recovery once the window is focused again and WebGL is usable.
+        // Opening another window can invalidate glyphs without an addon loss
+        // callback. Refresh both sides of a focus handoff, including live panes
+        // in the window that no longer has keyboard focus.
         fromEvent(window, 'focus').pipe(
             takeUntil(this.destroyed$),
-        ).subscribe(() => this.recoverRenderer())
+        ).subscribe(() => {
+            this.recoverRenderer()
+            this.scheduleRendererRefresh()
+        })
+        fromEvent(window, 'blur').pipe(
+            takeUntil(this.destroyed$),
+        ).subscribe(() => this.scheduleRendererRefresh())
 
         this.resizeHandler()
 
@@ -419,6 +437,7 @@ export class XTermFrontend extends Frontend {
     }
 
     detach (_host: HTMLElement): void {
+        XTermFrontend.attachedFrontends.delete(this)
         window.removeEventListener('resize', this.resizeHandler)
         this.resizeObserver?.disconnect()
         delete this.resizeObserver
@@ -426,6 +445,7 @@ export class XTermFrontend extends Frontend {
 
     destroy (): void {
         this.disposed = true
+        XTermFrontend.attachedFrontends.delete(this)
         this.flowControl.dispose()
         for (const resolve of this.pendingFlushes) {
             resolve()
@@ -722,6 +742,9 @@ export class XTermFrontend extends Frontend {
      * hidden, and flushes any GPU context recovery deferred until now.
      */
     reactivate (): void {
+        if (this.disposed || !this.opened) {
+            return
+        }
         // An app- or window-level GPU reset can blank the canvas without firing
         // xterm's per-canvas contextlost event, so pendingRendererRecovery stays
         // unset. Treat a WebGL frontend that has lost its addon as needing
@@ -737,15 +760,28 @@ export class XTermFrontend extends Frontend {
             this.rendererRecoveryAttempts = 0
             this.redraw()
         }
+        this.scheduleRendererRefresh()
     }
 
     private attachWebGLAddon (): void {
-        const addon = new WebglAddon()
-        // xterm fires this when the GPU drops the canvas context (driver reset,
-        // backgrounded app, too many live contexts).
-        addon.onContextLoss(() => this.onWebGLContextLoss())
-        this.xterm.loadAddon(addon)
-        this.webGLAddon = addon
+        let addon: WebglAddon | undefined = undefined
+        try {
+            addon = new WebglAddon()
+            addon.onContextLoss(() => {
+                if (this.webGLAddon === addon && !this.disposed) {
+                    this.onWebGLContextLoss()
+                }
+            })
+            this.xterm.loadAddon(addon)
+            this.webGLAddon = addon
+            this.pendingRendererRecovery = false
+        } catch (error) {
+            addon?.dispose()
+            // xterm's DOM renderer remains usable if the GPU cannot allocate
+            // another context. Retry on focus/reactivation within the budget.
+            this.pendingRendererRecovery = this.rendererRecoveryAttempts < MAX_WEBGL_RECOVERY_ATTEMPTS
+            console.warn('Could not start WebGL renderer; using the fallback renderer', error)
+        }
     }
 
     private onWebGLContextLoss (): void {
@@ -756,9 +792,9 @@ export class XTermFrontend extends Frontend {
     }
 
     /**
-     * Recreate the WebGL renderer after a lost GPU context. A new context can
-     * only be created on a visible, focused canvas, so this no-ops while the
-     * tab is hidden and is retried on reactivation or window focus.
+     * Recreate the WebGL renderer after a lost GPU context. A new context can be
+     * created in any visible window, even when another window has focus.
+     * Hidden panes retry on reactivation.
      */
     private recoverRenderer (): void {
         if (!this.pendingRendererRecovery || !this.canRecoverRenderer()) {
@@ -768,14 +804,41 @@ export class XTermFrontend extends Frontend {
         if (this.rendererRecoveryAttempts < MAX_WEBGL_RECOVERY_ATTEMPTS) {
             this.rendererRecoveryAttempts++
             this.attachWebGLAddon()
-            this.webGLAddon?.clearTextureAtlas()
         }
         // Once the retry budget is exhausted xterm falls back to its DOM renderer.
+        this.scheduleRendererRefresh()
         this.redraw()
     }
 
     private canRecoverRenderer (): boolean {
-        return !!this.element && this.element.offsetParent !== null && document.hasFocus()
+        return !this.disposed && this.opened && !!this.element && this.element.offsetParent !== null
+    }
+
+    private scheduleRendererRefresh (): void {
+        if (this.disposed || !this.opened || XTermFrontend.rendererRefreshPending) {
+            return
+        }
+        XTermFrontend.rendererRefreshPending = true
+        requestAnimationFrame(() => {
+            XTermFrontend.rendererRefreshPending = false
+            const frontends = [...XTermFrontend.attachedFrontends]
+            const clearedAtlases = new Set<HTMLCanvasElement>()
+            // xterm 5.4 shares glyph atlases between panes, but clearing one
+            // only invalidates the caller's vertex cache (xterm.js #6014).
+            // Finish all atlas clears before rebuilding any pane's model.
+            for (const frontend of frontends) {
+                const addon = frontend.webGLAddon ?? frontend.canvasAddon
+                const atlas = addon?.textureAtlas
+                if (atlas && !clearedAtlases.has(atlas)) {
+                    addon.clearTextureAtlas()
+                    clearedAtlases.add(atlas)
+                }
+            }
+            for (const frontend of frontends) {
+                frontend.xtermCore._renderService?.clear()
+                frontend.xterm.refresh(0, frontend.xterm.rows - 1)
+            }
+        })
     }
 
     private redraw (): void {
