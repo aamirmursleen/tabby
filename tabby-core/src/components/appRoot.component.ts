@@ -76,6 +76,7 @@ export class AppRootComponent {
     unsortedTabs: BaseTabComponent[] = []
     updatesAvailable = false
     activeTransfers: FileTransfer[] = []
+    workspaceToolsOpen = false
     openTabsMenuOpen = false
     private logger: Logger
 

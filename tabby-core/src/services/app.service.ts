@@ -488,19 +488,25 @@ export class AppService {
         const recoveryWasEnabled = this.tabRecovery.enabled
         let closed = false
         try {
+            let restoreSessions = true
             if (this.tabs.length) {
                 const result = await this.platform.showMessageBox({
                     type: 'warning',
-                    message: this.translate.instant('Close all tabs and save this workspace?'),
-                    detail: this.translate.instant('Your tabs and supported sessions will be restored next time you open Tabby. Running processes will stop.'),
-                    buttons: [this.translate.instant('Save sessions and close all tabs'), this.translate.instant('Cancel')],
-                    defaultId: 1,
-                    cancelId: 1,
+                    message: this.translate.instant('How would you like to close?'),
+                    detail: this.translate.instant('Close the program to restore your tabs, pane names and supported sessions next time. Close all terminals to start fresh. Running processes stop with either option.'),
+                    buttons: [
+                        this.translate.instant('Close program (restore sessions)'),
+                        this.translate.instant('Close all terminals (no restore)'),
+                        this.translate.instant('Cancel'),
+                    ],
+                    defaultId: 0,
+                    cancelId: 2,
                 })
-                if (result.response !== 0) {
+                if (result.response !== 0 && result.response !== 1) {
                     return
                 }
-                if (!this.config.store.recoverTabs) {
+                restoreSessions = result.response === 0
+                if (restoreSessions && !this.config.store.recoverTabs) {
                     this.config.store.recoverTabs = true
                     try {
                         await this.config.save()
@@ -510,18 +516,31 @@ export class AppService {
                     }
                 }
             }
-            await this.tabRecovery.saveTabs(this.tabs)
-            this.tabRecovery.enabled = false
-            if (await this.closeAllTabs(false)) {
-                this.hostWindow.close()
-                closed = true
+            let restorePreviousSnapshot: (() => void)|undefined = undefined
+            try {
+                if (restoreSessions) {
+                    const finalSave = this.tabRecovery.saveTabs(this.tabs)
+                    // Freeze new autosaves while the final snapshot is collected.
+                    this.tabRecovery.enabled = false
+                    await finalSave
+                } else {
+                    restorePreviousSnapshot = await this.tabRecovery.clearSavedTabs()
+                }
+                if (await this.closeAllTabs(false)) {
+                    this.hostWindow.close()
+                    closed = true
+                }
+            } finally {
+                if (!closed) {
+                    restorePreviousSnapshot?.()
+                }
             }
         } catch (error) {
-            this.tabRecovery.logger.warn('Could not save and close the workspace:', error)
+            this.tabRecovery.logger.warn('Could not close the workspace:', error)
             await this.platform.showMessageBox({
                 type: 'error',
-                message: this.translate.instant('Could not save and close the workspace'),
-                detail: this.translate.instant('Tabby has been left open. Check the log and try again.'),
+                message: this.translate.instant('Could not close the workspace'),
+                detail: this.translate.instant('The program has been left open. Check the log and try again.'),
                 buttons: [this.translate.instant('OK')],
             })
         } finally {

@@ -1,6 +1,7 @@
 import * as keytar from 'keytar'
 import { Injectable } from '@angular/core'
 import { VaultService } from 'tabby-core'
+import type { KeyPair } from 'russh'
 import { SSHProfile } from '../api'
 
 export const VAULT_SECRET_TYPE_PASSWORD = 'ssh:password'
@@ -8,7 +9,24 @@ export const VAULT_SECRET_TYPE_PASSPHRASE = 'ssh:key-passphrase'
 
 @Injectable({ providedIn: 'root' })
 export class PasswordStorageService {
+    private privateKeyUnlocks = new Map<string, Promise<KeyPair>>()
+
     constructor (private vault: VaultService) { }
+
+    /** Share the entire unlock flow when several servers open with the same key. */
+    async withPrivateKeyUnlock (id: string, unlock: () => Promise<KeyPair>): Promise<KeyPair> {
+        const pending = this.privateKeyUnlocks.get(id)
+        if (pending) {
+            return pending
+        }
+        const operation = Promise.resolve().then(unlock)
+        this.privateKeyUnlocks.set(id, operation)
+        try {
+            return await operation
+        } finally {
+            this.privateKeyUnlocks.delete(id)
+        }
+    }
 
     async savePassword (profile: SSHProfile, password: string, username?: string): Promise<void> {
         const account = username ?? profile.options.user
@@ -60,7 +78,7 @@ export class PasswordStorageService {
     async savePrivateKeyPassword (id: string, password: string): Promise<void> {
         if (this.vault.isEnabled()) {
             const key = this.getVaultKeyForPrivateKey(id)
-            this.vault.addSecret({ type: VAULT_SECRET_TYPE_PASSPHRASE, key, value: password })
+            await this.vault.addSecret({ type: VAULT_SECRET_TYPE_PASSPHRASE, key, value: password })
         } else {
             const key = this.getKeytarKeyForPrivateKey(id)
             return keytar.setPassword(key, 'user', password)

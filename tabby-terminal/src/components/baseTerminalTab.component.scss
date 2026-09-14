@@ -24,7 +24,7 @@
 
     > terminal-toolbar {
         position: absolute;
-        top: 0;
+        top: 32px;
         left: 0;
         right: 0;
         z-index: 4;
@@ -47,7 +47,7 @@
     > .toolbar-pin-button {
         position: absolute;
         right: 34px;
-        top: 5px;
+        top: 37px;
         z-index: 4;
         background: #00000047;
     }
@@ -55,6 +55,7 @@
     &.toolbar-pinned > .terminal-toolbar-spacer {
         width: 100%;
         height: $toolbarHeight;
+        flex-shrink: 0;
     }
 }
 

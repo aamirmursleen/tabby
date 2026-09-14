@@ -105,11 +105,15 @@ async function main () {
         await page.screenshot({ path: path.join(profile, 'before-close.png') })
 
         // Native window close cancellation leaves every session alive.
+        await electron.evaluate(() => { global.__testDialogResponse = 2 })
         await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
         await page.waitForFunction(() => !window.ng.getComponent(document.querySelector('app-root')).app.closingWindow)
         let dialogs = await electron.evaluate(() => global.__testDialogs)
         assert.equal(dialogs.length, 1)
-        assert.equal(dialogs[0].message, 'Close all tabs and save this workspace?')
+        assert.equal(dialogs[0].message, 'How would you like to close?')
+        assert.deepEqual(dialogs[0].buttons, ['Close program (restore sessions)', 'Close all terminals (no restore)', 'Cancel'])
+        assert.equal(dialogs[0].defaultId, 0)
+        assert.equal(dialogs[0].cancelId, 2)
         assert.equal(await page.evaluate(() => window.ng.getComponent(document.querySelector('app-root')).app.tabs.length), 2)
 
         await electron.evaluate(() => { global.__testDialogResponse = 0 })
@@ -153,6 +157,7 @@ async function main () {
         assert.equal(restored.tabs[0].text.match(/TEST_CODEX_RESUMED/g).length, 1, 'resume must run exactly once')
         await page.screenshot({ path: path.join(profile, 'restored.png') })
         // macOS Quit follows the same one-dialog workflow, including cancellation.
+        await electron.evaluate(() => { global.__testDialogResponse = 2 })
         await electron.evaluate(({ app }) => app.quit())
         await page.waitForFunction(() => !window.ng.getComponent(document.querySelector('app-root')).app.closingWindow)
         assert.equal((await electron.evaluate(() => global.__testDialogs)).length, 1)

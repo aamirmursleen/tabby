@@ -1,8 +1,54 @@
 # Aamir's Tabby fork
 
+## Aamir Terminal application identity
+
+The current custom app is installed as **Aamir Terminal.app**, with bundle identifier `com.aamirmursleen.terminal` and Electron package product name `Aamir Terminal`. Both identities differ from stock Tabby; changing only the `.app` filename did not separate the running instance or profile.
+
+Its profile is `~/Library/Application Support/Aamir Terminal`. On 2026-09-14, the saved config and local/session storage were copied from the existing `tabby` profile without changing the original. This is a snapshot of saved state, not a transfer of running terminal processes. Subsequent profile changes are independent.
+
+Build the ARM64 app using the dedicated configuration (compile the app/plugins first):
+
+```sh
+ditto tabby-core/dist builtin-plugins/tabby-core/dist
+ditto tabby-terminal/dist builtin-plugins/tabby-terminal/dist
+ditto tabby-ssh/dist builtin-plugins/tabby-ssh/dist
+node node_modules/electron-builder/cli.js --config electron-builder.aamir.yml --mac --arm64 --dir
+codesign --force --deep --sign - --options 0 'dist/aamir-terminal-arm64/mac-arm64/Aamir Terminal.app'
+```
+
+Refresh the staged core, terminal and SSH bundles with the commands above before packaging. The local build uses ad-hoc signing, as described below. Launch the installed build with:
+
+```sh
+open -a 'Aamir Terminal'
+```
+
+## Pane names and Snippets
+
+Every terminal has a permanent name bar. Click to rename; Enter or clicking away saves, Escape cancels. Clearing the name restores the profile/live-title fallback. Pane names use existing workspace recovery storage.
+
+The **Snippets** toolbar button opens a compact sidebar inspired by Termius, with green Run/Paste actions and short command previews. Create snippets, assign them to groups, rename groups, collapse sections, and search by title, command text or group name. Sort commands by name A–Z/Z–A, newest first, or recently updated. Deleting a group moves its snippets to Ungrouped; deleting a snippet requires its own confirmation.
+
+**Run** sends the saved command followed by Enter only to the selected pane's current program. **Paste** inserts without Enter, using bracketed paste when available; multiline paste is rejected if the destination cannot handle it without execution. The editor isolates keyboard shortcuts from terminal shortcuts. Saving or restoring a snippet never runs it automatically.
+
+Entries stay in the existing `workspaceNotes` configuration field, with groups in `workspaceSnippetGroups`. Earlier note records remain stored but are not displayed or made runnable by the Snippets-only interface. Writes are serialized; failed saves preserve existing records and drafts. Malformed imported records are preserved and produce repair feedback instead of crashing or being silently deleted.
+
+Verification: regression tests, core TypeScript/lint, Pug/SCSS compilation, and a static browser design preview. `test/e2e/workspaceTools.cjs` covers grouped snippets and restart flows but was not run for this revision because live app control is blocked.
+
+Version `1.0.236-aamir.4` fixes the Snippets startup crash: literal brace icons are HTML-escaped so Angular does not interpret them as ICU messages. `tabby-core/test/templates.test.cjs` now runs every core Pug component through Angular's real JIT compiler, including the SVG loader used by the build. This check reproduced the startup failure before the fix; all 112 regression tests pass afterward. Template compilation does not replace a live app interaction test.
+
+## SSH key passphrases
+
+Version `1.0.236-aamir.5` shares one private-key unlock operation across concurrent connections using the same key in a window. Existing Tabby passphrase identifiers remain compatible. The in-flight operation is removed after success, failure or cancellation; no permanent in-memory passphrase cache is added.
+
+Remembered passphrases are saved only after successful key parsing, and the unlock waits for the credential-storage write. Incorrect input and cancelled prompts no longer delete saved passphrases. Cancel also settles concurrent requests instead of reopening the prompt. Storage-access and save failures produce feedback while allowing manual unlocking. Encrypted PKCS8 PEM keys use the correct native decoder and recognize incorrect-passphrase errors. Profiles restricted to keys or an agent skip unrelated server-password lookups.
+
+macOS can separately request permission for Aamir Terminal Helper (Renderer) to access a saved `ssh-private-key` item. This dialog asks for the login keychain password, not the SSH key passphrase. **Always Allow** remembers permission for the requesting app; **Allow** grants one access. An update to this ad-hoc-signed build can trigger authorization again when its signature changes. The passphrase fixes do not remove this signing limitation.
+
+Verification: 128 regression tests, SSH TypeScript and lint, and native parsing tests with generated encrypted OpenSSH and PKCS8 keys. Tests cover four concurrent unlocks, credential reload, wrong input, cancellation and storage failures. Credential storage and dialogs use test doubles; no live server authentication or real passphrase extraction was performed.
+
 ## Workspace close and restoration
 
-Closing the window or choosing Quit asks once: **Save sessions and close all tabs**, or **Cancel**. The workspace is saved before tabs are destroyed. A failed storage write leaves the window open and reports an error. Accepting the dialog enables startup restoration if it was turned off. The individual tab close button still asks for confirmation.
+Closing the window or choosing Quit asks once: **Close program (restore sessions)**, **Close all terminals (no restore)**, or **Cancel**. The default saves the workspace before terminals close and enables startup restoration if necessary. The no-restore choice drains pending autosaves and clears the saved workspace; cancellation and failed saves leave sessions intact. Secondary windows cannot erase the main window’s saved workspace. The individual tab close button still asks for confirmation.
 
 Local restored tabs start their sessions even before you select them. Rendering remains lazy. Saved directories, titles, split layouts and supported recovery state use Tabby's existing recovery providers. Running processes do stop on exit; restoring terminal history is not a live process checkpoint. Arbitrary commands are not automatically replayed.
 
@@ -54,6 +100,6 @@ node test/e2e/packaged.cjs 'dist/custom-arm64/mac-arm64/Tabby Custom.app'
 
 ## Mac build
 
-The local ARM64 build is installed separately as **Tabby Custom.app**. Quit the old Tabby yourself when ready, then open the custom app. Both use the existing Tabby profile, so do not run both against that profile simultaneously. Keep the original app as a rollback option. The first switch can only restore information that the old version actually saved; exact UUID recovery applies to sessions saved by this fork.
+The previous local ARM64 build was installed separately as **Tabby Custom.app**; it has been superseded by Aamir Terminal above. Quit the old Tabby yourself when ready, then open the custom app. Both use the existing Tabby profile, so do not run both against that profile simultaneously. Keep the original app as a rollback option. The first switch can only restore information that the old version actually saved; exact UUID recovery applies to sessions saved by this fork.
 
 This local development build is ad-hoc signed, not notarized, and does not enable Apple's hardened runtime: ad-hoc signatures have no Developer Team ID for library validation. Electron's configured security fuses remain enabled. A hardened, notarized distribution build requires a valid Apple Developer ID certificate. Update from this fork; an upstream stock-app update would not include these customizations.

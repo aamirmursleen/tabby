@@ -70,9 +70,11 @@ test('one save-and-close confirmation replaces every per-tab confirmation', asyn
         ...dialog, config, tabRecovery: recovery, tabs,
         platform: { showMessageBox: async options => {
             prompts++
-            assert.match(options.buttons[0], /Save sessions and close all tabs/)
-            assert.equal(options.defaultId, 1)
-            assert.equal(options.cancelId, 1)
+            assert.deepEqual(Array.from(options.buttons), [
+                'Close program (restore sessions)', 'Close all terminals (no restore)', 'Cancel',
+            ])
+            assert.equal(options.defaultId, 0)
+            assert.equal(options.cancelId, 2)
             return { response: 0 }
         } },
         closeAllTabs: AppService.prototype.closeAllTabs,
@@ -91,7 +93,7 @@ test('cancelling the window dialog saves nothing and closes no tabs', async () =
     const { recovery, storage, config } = setup()
     await AppService.prototype.closeWindow.call({
         ...dialog, config, tabRecovery: recovery, tabs: [tab('keep')],
-        platform: { showMessageBox: async () => ({ response: 1 }) },
+        platform: { showMessageBox: async () => ({ response: 2 }) },
         closeAllTabs: () => assert.fail('cancelled'), hostWindow: { close: () => assert.fail('cancelled') },
     })
     assert.equal(storage.tabsRecovery, undefined)
@@ -191,7 +193,194 @@ test('repeated close requests share one confirmation', async () => {
     const first = AppService.prototype.closeWindow.call(app)
     await AppService.prototype.closeWindow.call(app)
     assert.equal(prompts, 1)
-    gate.resolve({ response: 1 })
+    gate.resolve({ response: 2 })
     await first
     assert.equal(app.closingWindow, false)
+})
+
+test('close all terminals removes saved sessions even when startup recovery is disabled', async () => {
+    const { AppService } = loadDeclarations('tabby-core/src/services/app.service.ts', ['AppService'], {
+        Subject, AsyncSubject, BOOTSTRAP_DATA: Symbol('bootstrap'),
+    })
+    for (const recoverTabs of [true, false]) {
+        const { recovery, storage, config } = setup()
+        storage.tabsRecovery = JSON.stringify([{ id: 'old' }])
+        config.store.recoverTabs = recoverTabs
+        config.save = () => assert.fail('discarding does not change the startup preference')
+        let closed = false
+        await AppService.prototype.closeWindow.call({
+            ...dialog, config, tabRecovery: recovery, tabs: [tab('discard')],
+            platform: { showMessageBox: async () => ({ response: 1 }) },
+            closeAllTabs: async check => {
+                assert.equal(check, false)
+                assert.equal(storage.tabsRecovery, '[]')
+                assert.equal(recovery.enabled, false)
+                return true
+            },
+            hostWindow: { close: () => { closed = true } },
+        })
+        assert.equal(closed, true)
+        assert.equal(storage.tabsRecovery, '[]')
+        assert.equal(config.store.recoverTabs, recoverTabs)
+    }
+})
+
+test('discard waits for an in-flight autosave and prevents later writes from resurrecting tabs', async () => {
+    const { AppService } = loadDeclarations('tabby-core/src/services/app.service.ts', ['AppService'], {
+        Subject, AsyncSubject, BOOTSTRAP_DATA: Symbol('bootstrap'),
+    })
+    const { recovery, storage, config } = setup()
+    const gate = deferred()
+    const slow = tab('autosave')
+    slow.getRecoveryToken = async () => { await gate.promise; return { id: 'autosave' } }
+    const saving = recovery.saveTabs([slow])
+    let destroyed = false
+    const closing = AppService.prototype.closeWindow.call({
+        ...dialog, config, tabRecovery: recovery, tabs: [slow],
+        platform: { showMessageBox: async () => ({ response: 1 }) },
+        closeAllTabs: async () => { destroyed = true; return true }, hostWindow: { close () {} },
+    })
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(destroyed, false)
+    assert.equal(recovery.enabled, false)
+    await recovery.saveTabs([tab('too-late')])
+    gate.resolve()
+    await Promise.all([saving, closing])
+    assert.equal(destroyed, true)
+    assert.equal(storage.tabsRecovery, '[]')
+})
+
+test('failed discard closure restores the exact previous snapshot without collecting replacement tokens', async () => {
+    const { AppService } = loadDeclarations('tabby-core/src/services/app.service.ts', ['AppService'], {
+        Subject, AsyncSubject, BOOTSTRAP_DATA: Symbol('bootstrap'),
+    })
+    for (const failure of ['blocked', 'destroy', 'window']) {
+        const { recovery, storage, config } = setup()
+        const previous = '[{"id":"irreplaceable-session","state":"history"}]'
+        storage.tabsRecovery = previous
+        let attempted = false
+        const app = {
+            ...dialog, config, tabRecovery: recovery,
+            tabs: [{ getRecoveryToken: () => assert.fail('discard must not collect replacement tokens') }],
+            platform: { showMessageBox: async () => ({ response: 1 }) },
+            closeAllTabs: async () => {
+                attempted = true
+                assert.equal(storage.tabsRecovery, '[]')
+                if (failure === 'destroy') { throw new Error('destroy failed') }
+                return failure !== 'blocked'
+            },
+            hostWindow: { close () { throw new Error('window close failed') } },
+        }
+        await AppService.prototype.closeWindow.call(app)
+        assert.equal(attempted, true)
+        assert.equal(storage.tabsRecovery, previous)
+        assert.equal(recovery.enabled, true)
+        assert.equal(app.closingWindow, false)
+    }
+})
+
+test('a failed discard storage write leaves all terminals and their snapshot intact', async () => {
+    const { AppService } = loadDeclarations('tabby-core/src/services/app.service.ts', ['AppService'], {
+        Subject, AsyncSubject, BOOTSTRAP_DATA: Symbol('bootstrap'),
+    })
+    const { recovery, storage, config } = setup()
+    const previous = '[{"id":"keep"}]'
+    Object.defineProperty(storage, 'tabsRecovery', { get: () => previous, set () { throw new Error('storage unavailable') } })
+    const dialogs = []
+    await AppService.prototype.closeWindow.call({
+        ...dialog, config, tabRecovery: recovery, tabs: [tab('keep')],
+        platform: { showMessageBox: async options => { dialogs.push(options); return { response: 1 } } },
+        closeAllTabs: () => assert.fail('must not destroy tabs'), hostWindow: { close: () => assert.fail('must not close') },
+    })
+    assert.equal(storage.tabsRecovery, previous)
+    assert.equal(recovery.enabled, true)
+    assert.equal(dialogs.length, 2)
+    assert.equal(dialogs[1].type, 'error')
+})
+
+test('discard rollback preserves the absence of an earlier snapshot', async () => {
+    const { recovery, storage } = setup()
+    const rollback = await recovery.clearSavedTabs()
+    assert.equal(storage.tabsRecovery, '[]')
+    rollback()
+    assert.equal(storage.tabsRecovery, undefined)
+    assert.equal(recovery.enabled, true)
+})
+
+test('discarding a secondary window cannot clear the main window saved workspace', async () => {
+    const { AppService } = loadDeclarations('tabby-core/src/services/app.service.ts', ['AppService'], {
+        Subject, AsyncSubject, BOOTSTRAP_DATA: Symbol('bootstrap'),
+    })
+    const { recovery, storage, config } = setup()
+    recovery.enabled = false // Only the main window owns the shared recovery store.
+    const previous = '[{"id":"main-window-session"}]'
+    storage.tabsRecovery = previous
+    let closed = false
+    await AppService.prototype.closeWindow.call({
+        ...dialog, config, tabRecovery: recovery, tabs: [tab('secondary-window')],
+        platform: { showMessageBox: async () => ({ response: 1 }) },
+        closeAllTabs: async () => true, hostWindow: { close: () => { closed = true } },
+    })
+    assert.equal(closed, true)
+    assert.equal(storage.tabsRecovery, previous)
+    assert.equal(recovery.enabled, false)
+})
+
+test('discard aborts when an earlier autosave fails, preserving sessions and recovery settings', async () => {
+    const { recovery, storage } = setup()
+    const gate = deferred()
+    const previous = '[{"id":"last-good"}]'
+    Object.defineProperty(storage, 'tabsRecovery', { get: () => previous, set () { throw new Error('quota') } })
+    const slow = tab('pending')
+    slow.getRecoveryToken = async () => { await gate.promise; return { id: 'pending' } }
+    const saveFailed = assert.rejects(recovery.saveTabs([slow]), /quota/)
+    const clearFailed = assert.rejects(recovery.clearSavedTabs(), /quota/)
+    gate.resolve()
+    await Promise.all([saveFailed, clearFailed])
+    assert.equal(storage.tabsRecovery, previous)
+    assert.equal(recovery.enabled, true)
+})
+
+test('save-and-close freezes autosaves until the final snapshot is safely stored', async () => {
+    const { AppService } = loadDeclarations('tabby-core/src/services/app.service.ts', ['AppService'], {
+        Subject, AsyncSubject, BOOTSTRAP_DATA: Symbol('bootstrap'),
+    })
+    const { recovery, storage, config } = setup()
+    const gate = deferred()
+    const slow = tab('final')
+    slow.getRecoveryToken = async () => { await gate.promise; return { id: 'final' } }
+    let closed = false
+    const closing = AppService.prototype.closeWindow.call({
+        ...dialog, config, tabRecovery: recovery, tabs: [slow],
+        closeAllTabs: async () => true, hostWindow: { close: () => { closed = true } },
+    })
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(recovery.enabled, false)
+    await recovery.saveTabs([tab('too-late')])
+    gate.resolve()
+    await closing
+    assert.equal(closed, true)
+    assert.equal(JSON.parse(storage.tabsRecovery)[0].id, 'final')
+})
+
+test('failure to enable startup recovery leaves the saved workspace and terminals untouched', async () => {
+    const { AppService } = loadDeclarations('tabby-core/src/services/app.service.ts', ['AppService'], {
+        Subject, AsyncSubject, BOOTSTRAP_DATA: Symbol('bootstrap'),
+    })
+    const { recovery, storage, config } = setup()
+    const previous = '[{"id":"saved"}]'
+    storage.tabsRecovery = previous
+    config.store.recoverTabs = false
+    config.save = async () => { throw new Error('config unavailable') }
+    const dialogs = []
+    await AppService.prototype.closeWindow.call({
+        ...dialog, config, tabRecovery: recovery, tabs: [tab('keep')],
+        platform: { showMessageBox: async options => { dialogs.push(options); return { response: 0 } } },
+        closeAllTabs: () => assert.fail('must not destroy tabs'), hostWindow: { close: () => assert.fail('must not close') },
+    })
+    assert.equal(config.store.recoverTabs, false)
+    assert.equal(storage.tabsRecovery, previous)
+    assert.equal(recovery.enabled, true)
+    assert.equal(dialogs.length, 2)
+    assert.equal(dialogs[1].type, 'error')
 })

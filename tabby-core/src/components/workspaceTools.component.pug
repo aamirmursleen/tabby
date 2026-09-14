@@ -1,0 +1,119 @@
+.sidebar-header
+    .sidebar-title
+        span.snippet-emblem(aria-hidden='true') &#123;&#125;
+        h2 Snippets
+        span.total-count {{snippetCount}}
+        button.icon-button.close-sidebar(aria-label='Close snippets', title='Close snippets', (click)='close()')
+            i.fas.fa-times
+    .library-toolbar
+        button.new-snippet((click)='edit()', [disabled]='!!draft || !!groupDraft || busy')
+            span(aria-hidden='true') &#123;&#125;
+            | New snippet
+        button.icon-button.new-group(aria-label='New group', title='New group', (click)='editGroup()', [disabled]='!!draft || !!groupDraft || busy')
+            i.far.fa-folder
+            i.fas.fa-plus.folder-plus
+        .sort-menu(ngbDropdown, placement='bottom-right', container='body')
+            button.icon-button(ngbDropdownToggle, aria-label='Sort snippets', [title]='sortLabel')
+                i.fas.fa-sort-alpha-down
+            .snippet-dropdown(ngbDropdownMenu, (keydown)='$event.stopPropagation()', (keyup)='$event.stopPropagation()')
+                button(ngbDropdownItem, (click)='sort = "name-asc"', [class.active]='sort === "name-asc"') Name: A–Z
+                button(ngbDropdownItem, (click)='sort = "name-desc"', [class.active]='sort === "name-desc"') Name: Z–A
+                button(ngbDropdownItem, (click)='sort = "updated"', [class.active]='sort === "updated"') Recently updated
+                button(ngbDropdownItem, (click)='sort = "newest"', [class.active]='sort === "newest"') Newest first
+    .search-box
+        i.fas.fa-search(aria-hidden='true')
+        input(aria-label='Search snippets', placeholder='Search snippets or groups…', [(ngModel)]='query', spellcheck='false')
+        button.icon-button(*ngIf='query', aria-label='Clear search', (click)='query = ""')
+            i.fas.fa-times
+    .search-summary(*ngIf='query.trim()') {{entries.length}} {{entries.length === 1 ? 'match' : 'matches'}}
+
+.sidebar-scroll
+    .feedback.error(*ngIf='error || tools.validationError', role='alert') {{error || tools.validationError}}
+    form.snippet-editor(*ngIf='draft', (ngSubmit)='save()')
+        .editor-heading
+            i.fas.fa-code(aria-hidden='true')
+            strong {{editorTitle}}
+        label(for='workspace-title') Title
+        input#workspace-title.editor-input(autofocus, [(ngModel)]='draft.title', name='title', maxlength='120', placeholder='e.g. Resume workspace', [disabled]='busy')
+        label(for='workspace-group') Group
+        select#workspace-group.editor-input([(ngModel)]='draft.groupId', name='group', [disabled]='busy')
+            option(value='') Ungrouped
+            option(*ngFor='let group of groups; trackBy: trackByID', [value]='group.id') {{group.name}}
+        label(for='workspace-body') Command
+        .code-editor
+            .code-editor-caption
+                span SHELL
+                i.fas.fa-terminal(aria-hidden='true')
+            textarea#workspace-body([(ngModel)]='draft.body', name='body', rows='9', placeholder='tmux new -A -s workspace', [disabled]='busy', spellcheck='false')
+        .editor-actions
+            button.subtle-button(type='button', (click)='draft = null; error = ""', [disabled]='busy') Cancel
+            button.accent-button(type='submit', [disabled]='busy || !draft.title.trim() || !draft.body.trim()') {{busy ? 'Saving…' : 'Save snippet'}}
+    form.group-editor(*ngIf='groupDraft', (ngSubmit)='saveGroup()')
+        .editor-heading
+            i.far.fa-folder(aria-hidden='true')
+            strong Organize your commands
+        p.editor-description Keep related snippets together.
+        label(for='snippet-group-name') Group name
+        input#snippet-group-name.editor-input(autofocus, [(ngModel)]='groupDraft.name', name='groupName', maxlength='80', placeholder='e.g. Deployments', [disabled]='busy')
+        .editor-actions
+            button.subtle-button(type='button', (click)='groupDraft = null; error = ""', [disabled]='busy') Cancel
+            button.accent-button(type='submit', [disabled]='busy || !groupDraft.name.trim()') Save group
+    .snippet-library(*ngIf='!draft && !groupDraft')
+        .empty-state(*ngIf='sections.length === 0')
+            span.empty-emblem(aria-hidden='true') &#123;&#125;
+            strong {{query.trim() ? 'No snippets found' : 'Your commands, one click away'}}
+            p {{query.trim() ? 'Try a different command, name, or group.' : 'Save a command once. Run it whenever you need it.'}}
+            button.subtle-button(*ngIf='query.trim()', (click)='query = ""') Clear search
+            button.accent-button(*ngIf='!query.trim()', (click)='edit()') Create your first snippet
+        section.snippet-group(*ngFor='let section of sections; trackBy: trackByID')
+            .group-heading
+                button.group-toggle((click)='toggleGroup(section.id)', [attr.aria-expanded]='isExpanded(section.id)', [attr.aria-label]='"Toggle group " + section.name')
+                    i.fas.fa-chevron-right([class.expanded]='isExpanded(section.id)', aria-hidden='true')
+                    i.far.fa-folder(*ngIf='section.id', aria-hidden='true')
+                    span {{section.name}}
+                    small {{section.entries.length}}
+                button.icon-button.group-add([attr.aria-label]='"Add snippet to " + section.name', title='Add snippet', (click)='edit(undefined, section.id)', [disabled]='busy')
+                    i.fas.fa-plus
+                .group-menu(*ngIf='section.id', ngbDropdown, placement='bottom-right', container='body')
+                    button.icon-button(ngbDropdownToggle, [attr.aria-label]='"More actions for group " + section.name')
+                        i.fas.fa-ellipsis-h
+                    .snippet-dropdown(ngbDropdownMenu, (keydown)='$event.stopPropagation()', (keyup)='$event.stopPropagation()')
+                        button(ngbDropdownItem, (click)='editGroup(section)', [disabled]='busy') Rename group
+                        button(ngbDropdownItem, (click)='deletingGroup = section.id', [disabled]='busy') Delete group
+            .inline-confirm(*ngIf='deletingGroup === section.id')
+                strong Delete this group?
+                p Its snippets will move to Ungrouped.
+                .confirm-actions
+                    button.subtle-button((click)='deletingGroup = null', [disabled]='busy') Cancel
+                    button.danger-button((click)='removeGroup(section.id)', [disabled]='busy') Delete group
+            .group-content(*ngIf='isExpanded(section.id)')
+                button.empty-group(*ngIf='section.entries.length === 0', (click)='edit(undefined, section.id)')
+                    i.fas.fa-plus.me-2(aria-hidden='true')
+                    | Add a snippet to this group
+                article.snippet-card(*ngFor='let entry of section.entries; trackBy: trackByID')
+                    .snippet-row
+                        button.snippet-title((click)='edit(entry)', [title]='entry.title', [disabled]='busy')
+                            span.code-symbol(aria-hidden='true') &#123;&#125;
+                            span {{entry.title}}
+                        .snippet-actions
+                            button.run-button([attr.aria-label]='"Run " + entry.title', [title]='"Run in " + targetName', (click)='run(entry)', [disabled]='!target?.session?.open') RUN
+                            button.paste-button([attr.aria-label]='"Paste " + entry.title', title='Paste without Enter', (click)='paste(entry)', [disabled]='!target?.session?.open') PASTE
+                    .snippet-preview-row
+                        pre([title]='entry.body') {{entry.body}}
+                        .entry-menu(ngbDropdown, placement='bottom-right', container='body')
+                            button.icon-button(ngbDropdownToggle, [attr.aria-label]='"More actions for " + entry.title')
+                                i.fas.fa-ellipsis-h
+                            .snippet-dropdown(ngbDropdownMenu, (keydown)='$event.stopPropagation()', (keyup)='$event.stopPropagation()')
+                                button(ngbDropdownItem, (click)='edit(entry)', [disabled]='busy') Edit snippet
+                                button(ngbDropdownItem, (click)='deleting = entry.id', [disabled]='busy') Delete snippet
+                    .inline-confirm(*ngIf='deleting === entry.id')
+                        strong Delete this snippet?
+                        .confirm-actions
+                            button.subtle-button((click)='deleting = null', [disabled]='busy') Cancel
+                            button.danger-button((click)='remove(entry)', [disabled]='busy') Delete permanently
+.sidebar-footer
+    .feedback.status(role='status', aria-live='polite') {{status}}
+    .target([title]='"Commands go to the current program in " + targetName')
+        span.connection-dot([class.connected]='target?.session?.open', aria-hidden='true')
+        span.target-caption {{target?.session?.open ? 'RUN IN' : 'TERMINAL'}}
+        strong {{targetName}}

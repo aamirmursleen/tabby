@@ -10,6 +10,9 @@ import { TranslateMessageFormatCompiler, MESSAGE_FORMAT_CONFIG } from 'ngx-trans
 
 import '@angular/localize/init'
 
+import { TerminalPaneHeaderComponent } from './components/terminalPaneHeader.component'
+import { WorkspaceToolsComponent } from './components/workspaceTools.component'
+
 import { AppRootComponent } from './components/appRoot.component'
 import { CheckboxComponent } from './components/checkbox.component'
 import { TabBodyComponent } from './components/tabBody.component'
@@ -107,7 +110,9 @@ const PROVIDERS = [
         }),
     ],
     declarations: [
+        WorkspaceToolsComponent,
         AppRootComponent,
+        TerminalPaneHeaderComponent,
         CheckboxComponent,
         PromptModalComponent,
         StartPageComponent,
@@ -138,6 +143,7 @@ const PROVIDERS = [
     ],
     exports: [
         AppRootComponent,
+        TerminalPaneHeaderComponent,
         CheckboxComponent,
         ToggleComponent,
         PromptModalComponent,

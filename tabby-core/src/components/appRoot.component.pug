@@ -81,6 +81,13 @@ title-bar(
             )
 
             .btn-group.background
+                button.btn.btn-secondary.btn-tab-bar(
+                    ngbTooltip='Snippets',
+                    aria-label='Snippets',
+                    [attr.aria-expanded]='workspaceToolsOpen',
+                    (click)='workspaceToolsOpen = !workspaceToolsOpen'
+                )
+                    i.fas.fa-code
                 .d-flex(
                     ngbDropdown,
                     container='body',
@@ -134,5 +141,7 @@ title-bar(
                 [active]='tab == app.activeTab',
                 [tab]='tab',
             )
+
+    workspace-tools(*ngIf='ready', [hidden]='!workspaceToolsOpen', (closed)='workspaceToolsOpen = false')
 
 ng-template(ngbModalContainer)

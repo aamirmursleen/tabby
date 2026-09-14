@@ -35,6 +35,34 @@ export class TabRecoveryService {
         await this.saveInProgress
     }
 
+    /** Clear startup sessions for an explicit discard, retaining a rollback if closing fails. */
+    async clearSavedTabs (): Promise<() => void> {
+        // Secondary windows share storage but do not own the saved workspace.
+        if (!this.enabled) {
+            return () => undefined
+        }
+        const wasEnabled = this.enabled
+        this.enabled = false
+        try {
+            // A previously queued autosave must finish before the empty snapshot
+            // is written, or its tokens could bring discarded terminals back.
+            await this.saveInProgress
+            const previousSnapshot = window.localStorage.tabsRecovery
+            window.localStorage.tabsRecovery = '[]'
+            return () => {
+                if (previousSnapshot === undefined) {
+                    delete window.localStorage.tabsRecovery
+                } else {
+                    window.localStorage.tabsRecovery = previousSnapshot
+                }
+                this.enabled = wasEnabled
+            }
+        } catch (error) {
+            this.enabled = wasEnabled
+            throw error
+        }
+    }
+
     private async flushPendingSaves (): Promise<void> {
         while (this.pendingSave) {
             const tabs = this.pendingSave

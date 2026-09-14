@@ -1,0 +1,17 @@
+extends: ./electron-builder.yml
+appId: com.aamirmursleen.terminal
+productName: Aamir Terminal
+executableName: Aamir Terminal
+extraMetadata:
+  name: aamir-terminal
+  productName: Aamir Terminal
+  version: 1.0.236-aamir.5
+  teamId: ''
+directories:
+  app: app
+  output: dist/aamir-terminal-arm64
+mac:
+  identity: null
+  hardenedRuntime: false
+  notarize: false
+  artifactName: aamir-terminal-${version}-${arch}.${ext}

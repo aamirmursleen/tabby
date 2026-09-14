@@ -262,7 +262,8 @@ export class SSHSession {
     }
 
     private async populateStoredPasswordsForResolvedUsername (): Promise<void> {
-        if (!this.authUsername) {
+        const auth = this.profile.options.auth
+        if (!this.authUsername || auth && auth !== 'password' && auth !== 'keyboardInteractive') {
             return
         }
 
@@ -935,47 +936,78 @@ export class SSHSession {
     }
 
     async loadPrivateKeyWithPassphraseMaybe (privateKey: string): Promise<russh.KeyPair> {
+        // Keep the existing identifier so passphrases saved by Tabby remain usable.
         const keyHash = crypto.createHash('sha512').update(privateKey).digest('hex')
-
         privateKey = privateKey.replaceAll('EC PRIVATE KEY', 'PRIVATE KEY')
+        return this.passwordStorage.withPrivateKeyUnlock(keyHash, () => this.unlockPrivateKey(privateKey, keyHash))
+    }
 
-        let triedSavedPassphrase = false
-        let passphrase: string|null = null
-        while (true) {
+    private async unlockPrivateKey (privateKey: string, keyHash: string): Promise<russh.KeyPair> {
+        // russh needs a passphrase argument to select the encrypted PKCS8 decoder.
+        const initialPassphrase = privateKey.includes('-----BEGIN ENCRYPTED PRIVATE KEY-----') ? '' : undefined
+        try {
+            return await russh.KeyPair.parse(privateKey, initialPassphrase)
+        } catch (error) {
+            this.handlePrivateKeyParseError(error)
+        }
+
+        let savedPassphrase: string|null = null
+        try {
+            savedPassphrase = await this.passwordStorage.loadPrivateKeyPassword(keyHash)
+        } catch {
+            this.notifications.error('Could not access the saved private key passphrase. Check access to your credential storage.')
+        }
+        if (savedPassphrase !== null) {
             try {
-                return await russh.KeyPair.parse(privateKey, passphrase ?? undefined)
-            } catch (e) {
-                if (!triedSavedPassphrase) {
-                    passphrase = await this.passwordStorage.loadPrivateKeyPassword(keyHash)
-                    triedSavedPassphrase = true
-                    continue
-                }
-                if ([
-                    'Error: Keys(KeyIsEncrypted)',
-                    'Error: Keys(SshKey(Ppk(Encrypted)))',
-                    'Error: Keys(SshKey(Ppk(IncorrectMac)))',
-                    'Error: Keys(SshKey(Crypto))',
-                ].includes(e.toString())) {
-                    await this.passwordStorage.deletePrivateKeyPassword(keyHash)
+                return await russh.KeyPair.parse(privateKey, savedPassphrase)
+            } catch (error) {
+                this.handlePrivateKeyParseError(error)
+            }
+        }
 
-                    const modal = this.ngbModal.open(PromptModalComponent)
-                    modal.componentInstance.prompt = 'Private key passphrase'
-                    modal.componentInstance.password = true
-                    modal.componentInstance.showRememberCheckbox = true
+        // Do not remove saved credentials on a failed attempt or cancellation.
+        // Only replace them after a new passphrase has successfully unlocked the key.
+        while (true) {
+            const modal = this.ngbModal.open(PromptModalComponent)
+            modal.componentInstance.prompt = 'Private key passphrase'
+            modal.componentInstance.password = true
+            modal.componentInstance.showRememberCheckbox = true
+            modal.componentInstance.remember = savedPassphrase !== null
 
-                    const result = await modal.result.catch(() => {
-                        throw new Error('Passphrase prompt cancelled')
-                    })
+            const result = await modal.result.catch(() => null)
+            if (!result || typeof result.value !== 'string') {
+                throw new Error('Passphrase prompt cancelled')
+            }
 
-                    passphrase = result?.value
-                    if (passphrase && result.remember) {
-                        this.passwordStorage.savePrivateKeyPassword(keyHash, passphrase)
-                    }
-                } else {
-                    this.notifications.error('Could not read the private key', e.toString())
-                    throw e
+            let key: russh.KeyPair|null = null
+            try {
+                key = await russh.KeyPair.parse(privateKey, result.value)
+            } catch (error) {
+                this.handlePrivateKeyParseError(error)
+                this.notifications.error('Incorrect private key passphrase')
+                continue
+            }
+            if (result.remember) {
+                try {
+                    await this.passwordStorage.savePrivateKeyPassword(keyHash, result.value)
+                } catch {
+                    this.notifications.error('Could not save the private key passphrase. You may be asked again next time.')
                 }
             }
+            return key
+        }
+    }
+
+    private handlePrivateKeyParseError (error: unknown): void {
+        if (![
+            'Error: Keys(KeyIsEncrypted)',
+            'Error: Keys(SshKey(Ppk(Encrypted)))',
+            'Error: Keys(SshKey(Ppk(IncorrectMac)))',
+            'Error: Keys(SshKey(Crypto))',
+            'Error: Keys(Pkcs8(EncryptedPrivateKey(DecryptFailed)))',
+        ].includes(String(error))) {
+            this.notifications.error('Could not read the private key', String(error))
+            throw error
         }
     }
 
