@@ -5,7 +5,7 @@ executableName: Aamir Terminal
 extraMetadata:
   name: aamir-terminal
   productName: Aamir Terminal
-  version: 1.0.236-aamir.8
+  version: 1.0.236-aamir.9
   teamId: ''
 directories:
   app: app

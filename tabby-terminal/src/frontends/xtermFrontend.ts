@@ -487,7 +487,22 @@ export class XTermFrontend extends Frontend {
     }
 
     focus (): void {
-        setTimeout(() => this.xterm.focus())
+        setTimeout(() => {
+            // A focus request can outlive a pane switch or arrive while a
+            // password dialog/editor owns input. Recheck when the timer runs.
+            if (this.disposed || !this.opened || !this.enableResizing || !this.element?.getClientRects().length) {
+                return
+            }
+            if (document.querySelector('ngb-modal-window, [role="dialog"][aria-modal="true"]')) {
+                return
+            }
+            const activeElement = document.activeElement
+            if (activeElement?.matches('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]')
+                && !activeElement.classList.contains('xterm-helper-textarea')) {
+                return
+            }
+            this.xterm.focus()
+        })
     }
 
     async write (data: string): Promise<void> {

@@ -66,6 +66,20 @@ Verification: all 136 regression tests, terminal TypeScript/lint and webpack pas
 TABBY_PLAYWRIGHT_PATH=/path/to/playwright node test/integration/renderer.cjs
 ```
 
+## Keyboard focus and window isolation
+
+Version `1.0.236-aamir.9` scopes opacity, title-bar control positioning and drag-vibrancy messages to the sending window. IPC and updater listeners are removed when a window closes, including a window closed before renderer readiness. This fixes the recorded `setOpacity` / `setWindowButtonPosition` null-window exceptions. A new window no longer raises and refocuses every existing window when it finishes loading.
+
+Native activation restores Chromium keyboard focus when needed, while preserving DevTools focus and disabled modal parents. Deferred xterm focus requests recheck pane visibility, activity and lifetime. Password dialogs and other editors keep their input instead of a background terminal taking focus during window activation.
+
+Verification: 163 regression tests, main/terminal TypeScript and lint, and both webpack builds pass. `test/integration/inputFocus.cjs` exercises the actual AppService activation handler, ng-bootstrap password component and xterm keyboard input in isolated Chromium. The old code fails the editor-focus case; the fix preserves editor/password input, restores input to the selected pane after a second-page handoff and modal dismissal, and discards inactive-pane requests. Native APIs use event-emitter doubles in the window lifecycle tests. Live macOS window and Keychain interaction remain unverified because desktop app control is blocked.
+
+This version does not change saved credentials or Keychain permissions. An SSH private-key passphrase, Tabby's optional vault passphrase and macOS authorization are separate prompts; the exact dialog text is needed to distinguish them. Stock Tabby uses keytar / macOS Keychain by default or its optional vault; Termius documents an encrypted vault. The ad-hoc signing limitation above still applies after app updates.
+
+```sh
+TABBY_PLAYWRIGHT_PATH=/path/to/playwright node test/integration/inputFocus.cjs
+```
+
 ## Saved tab layouts
 
 Version `1.0.236-aamir.7` adds **Saved layouts** immediately beside **Snippets** in the toolbar. Arrange a tab, choose **Save current tab**, name it, and save. Each card previews the actual split proportions and has Open, Rename, Replace with current tab, and Delete actions. Search matches layout and pane names. Opening creates a new tab without closing current terminals.

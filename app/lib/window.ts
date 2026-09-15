@@ -130,7 +130,6 @@ export class Window {
                 }
                 this.window.focus()
                 this.window.moveTop()
-                application.focus()
             }
         })
 
@@ -170,13 +169,10 @@ export class Window {
         this.setupUpdater()
 
         this.ready = new Promise(resolve => {
-            const listener = event => {
-                if (event.sender === this.window.webContents) {
-                    ipcMain.removeListener('app:ready', listener as any)
-                    resolve()
-                }
-            }
-            ipcMain.on('app:ready', listener)
+            const unsubscribe = this.on('app:ready', () => {
+                unsubscribe()
+                resolve()
+            })
         })
     }
 
@@ -373,6 +369,11 @@ export class Window {
         })
 
         this.window.on('focus', () => {
+            // Native window activation and Chromium keyboard focus can diverge
+            // after a system dialog or a switch between application windows.
+            if (this.window.isEnabled() && !this.webContents.isFocused() && !this.webContents.isDevToolsFocused()) {
+                this.webContents.focus()
+            }
             this.send('host:window-focused')
         })
 
@@ -446,7 +447,7 @@ export class Window {
             return { action: 'deny' }
         })
 
-        ipcMain.on('window-set-disable-vibrancy-while-dragging', (_event, value) => {
+        this.on('window-set-disable-vibrancy-while-dragging', (_event, value) => {
             this.disableVibrancyWhileDragging = value && this.configStore.hacks?.disableVibrancyWhileDragging
         })
 
@@ -465,12 +466,13 @@ export class Window {
         }
         this.window.on('move', onBoundsChange)
         this.window.on('resize', onBoundsChange)
+        this.closed$.subscribe(() => clearTimeout(moveEndedTimeout))
 
-        ipcMain.on('window-set-traffic-light-position', (_event, x, y) => {
+        this.on('window-set-traffic-light-position', (_event, x, y) => {
             this.window.setWindowButtonPosition({ x, y })
         })
 
-        ipcMain.on('window-set-opacity', (_event, opacity) => {
+        this.on('window-set-opacity', (_event, opacity) => {
             this.window.setOpacity(opacity)
         })
 
@@ -479,32 +481,43 @@ export class Window {
         })
     }
 
-    on (event: string, listener: (...args: any[]) => void): void {
-        ipcMain.on(event, (e, ...args) => {
+    on (event: string, listener: (...args: any[]) => void): () => void {
+        const handler = (e, ...args) => {
             if (!this.window || e.sender !== this.window.webContents) {
                 return
             }
             listener(e, ...args)
-        })
+        }
+        ipcMain.on(event, handler)
+        const subscription = this.closed$.subscribe(() => ipcMain.removeListener(event, handler))
+        return () => {
+            ipcMain.removeListener(event, handler)
+            subscription.unsubscribe()
+        }
     }
 
     private setupUpdater () {
+        const on = (event: Parameters<typeof autoUpdater.on>[0], listener: (...args: any[]) => void) => {
+            autoUpdater.on(event, listener)
+            this.closed$.subscribe(() => autoUpdater.removeListener(event, listener))
+        }
+
         autoUpdater.autoDownload = true
         autoUpdater.autoInstallOnAppQuit = true
 
-        autoUpdater.on('update-available', () => {
+        on('update-available', () => {
             this.send('updater:update-available')
         })
 
-        autoUpdater.on('update-not-available', () => {
+        on('update-not-available', () => {
             this.send('updater:update-not-available')
         })
 
-        autoUpdater.on('error', err => {
+        on('error', err => {
             this.send('updater:error', err)
         })
 
-        autoUpdater.on('update-downloaded', () => {
+        on('update-downloaded', () => {
             this.send('updater:update-downloaded')
         })
 
