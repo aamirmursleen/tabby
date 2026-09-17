@@ -30,6 +30,7 @@ export class SSHProfileSettingsComponent implements ProfileSettingsComponent<SSH
     showPastePrivateKeyForm = false
     pastedPrivateKeyName = ''
     pastedPrivateKey = ''
+    pastedPrivateKeyPassphrase = ''
     pastedPrivateKeyBusy = false
     @ViewChild('loginScriptsSettings') loginScriptsSettings: LoginScriptsSettingsComponent|null
 
@@ -132,6 +133,7 @@ export class SSHProfileSettingsComponent implements ProfileSettingsComponent<SSH
     cancelPastedPrivateKey () {
         this.showPastePrivateKeyForm = false
         this.pastedPrivateKey = ''
+        this.pastedPrivateKeyPassphrase = ''
     }
 
     async savePastedPrivateKey () {
@@ -141,12 +143,13 @@ export class SSHProfileSettingsComponent implements ProfileSettingsComponent<SSH
         this.pastedPrivateKeyBusy = true
         try {
             const label = this.pastedPrivateKeyName || this.profile.name || this.profile.options.host || 'SSH key'
-            const saved = await this.sshKeys.savePrivateKey(label, this.pastedPrivateKey)
+            const saved = await this.sshKeys.savePrivateKey(label, this.pastedPrivateKey, this.pastedPrivateKeyPassphrase)
             this.addPrivateKeyRef(saved.ref)
             this.refreshSavedKeys()
             this.selectedSavedKeyRef = saved.ref
             this.showPastePrivateKeyForm = false
             this.pastedPrivateKey = ''
+            this.pastedPrivateKeyPassphrase = ''
             this.notifications.notice('SSH key saved')
         } catch (error) {
             this.notifications.error('Could not save SSH key', String(error))

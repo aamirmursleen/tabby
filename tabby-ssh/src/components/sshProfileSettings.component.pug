@@ -216,6 +216,14 @@ ul.nav-tabs(ngbNav, #nav='ngbNav')
                         [disabled]='pastedPrivateKeyBusy',
                         spellcheck='false',
                     )
+                    input.form-control.mb-2(
+                        type='password',
+                        placeholder='Private key passphrase (optional)',
+                        aria-label='Private key passphrase (optional)',
+                        autocomplete='new-password',
+                        [(ngModel)]='pastedPrivateKeyPassphrase',
+                        [disabled]='pastedPrivateKeyBusy',
+                    )
                     button.btn.btn-primary.me-2(
                         (click)='savePastedPrivateKey()',
                         [disabled]='pastedPrivateKeyBusy || !pastedPrivateKey.trim()',

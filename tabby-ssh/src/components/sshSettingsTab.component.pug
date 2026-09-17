@@ -88,6 +88,15 @@ h3.mt-5(translate) Keychain
             [disabled]='keyBusy',
             spellcheck='false',
         )
+        input.form-control.mb-1(
+            type='password',
+            placeholder='Private key passphrase (optional)',
+            aria-label='Private key passphrase (optional)',
+            autocomplete='new-password',
+            [(ngModel)]='newPrivateKeyPassphrase',
+            [disabled]='keyBusy',
+        )
+        .small.text-muted.mb-2(translate) Used for pasted or imported encrypted keys, or to encrypt a generated key. Saved in credential storage.
         .d-flex
             button.btn.btn-primary.me-2(
                 (click)='savePastedKey()',

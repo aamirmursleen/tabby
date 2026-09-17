@@ -48,6 +48,10 @@ Version `1.0.236-aamir.4` fixes the Snippets startup crash: literal brace icons 
 
 ## SSH key passphrases
 
+Version `1.0.236-aamir.12` adds an optional passphrase field when pasting a private key into an SSH profile and when pasting, importing, or generating keys in SSH settings. Pasted and imported encrypted keys are checked with the entered passphrase before saving. Generated keys are encrypted when a passphrase is entered. The passphrase is saved in the existing credential store using the same key identifier the SSH connection reads, and is cleared from the form after a successful save. A credential-store failure rolls back the new key, so the profile is not attached to a key that cannot reconnect without prompting.
+
+Verification: SSH tests cover encrypted PKCS8 and OpenSSH keys, incorrect passphrases, credential-store failure cleanup, generated encrypted keys, and the profile and key-library form flows. The installed arm64 app is code signed and its packaged SSH plugin matches the rebuilt plugin. An already-running app must be fully quit and reopened to load the update.
+
 Version `1.0.236-aamir.11` adds the missing direct paste flow inside each SSH profile's Private keys section. The profile editor now has **Paste and save key**, which opens a private-key textarea, saves the pasted key into the reusable key library, and immediately attaches it to the current server. The default key name comes from the profile name so a pasted key can be saved and used without visiting the separate SSH settings page.
 
 Version `1.0.236-aamir.10` adds a reusable SSH key library in SSH settings. Private keys can be pasted, imported from a file, or generated as ED25519/RSA keys. The private-key body is saved as a local `0600` file beside the Aamir Terminal config, while `config.yaml` stores only metadata such as label, algorithm, fingerprint and public key. SSH profiles can select saved keys by name and keep existing file-based private-key references for backward compatibility.

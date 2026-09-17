@@ -4,6 +4,7 @@ import * as path from 'path'
 import { Injectable } from '@angular/core'
 import { ConfigService, FileProvider, PlatformService } from 'tabby-core'
 import * as russh from 'russh'
+import { PasswordStorageService } from './passwordStorage.service'
 
 export const SSH_KEY_REF_PREFIX = 'ssh-key://'
 
@@ -37,6 +38,7 @@ export class SSHKeyStorageService {
     constructor (
         private config: ConfigService,
         private platform: PlatformService,
+        private passwordStorage: PasswordStorageService,
     ) { }
 
     get keys (): SSHStoredKey[] {
@@ -72,11 +74,11 @@ export class SSHKeyStorageService {
         return key.type ? `${key.label} (${key.type})` : key.label
     }
 
-    async savePrivateKey (label: string, privateKey: string): Promise<SSHSavedKey> {
+    async savePrivateKey (label: string, privateKey: string, passphrase?: string): Promise<SSHSavedKey> {
         const normalizedLabel = this.validateLabel(label)
         this.validateUniqueLabel(normalizedLabel)
         const normalizedKey = this.normalizePrivateKey(privateKey)
-        const metadata = await this.inspectPrivateKey(normalizedKey, normalizedLabel)
+        const metadata = await this.inspectPrivateKey(normalizedKey, normalizedLabel, passphrase)
         const id = crypto.randomUUID()
         const now = Date.now()
         const key: SSHStoredKey = {
@@ -92,39 +94,51 @@ export class SSHKeyStorageService {
         await this.writePrivateKey(id, normalizedKey)
         try {
             await this.replaceKeys([...this.config.store.ssh.keys, key])
+            if (passphrase) {
+                const keyHash = crypto.createHash('sha512').update(normalizedKey).digest('hex')
+                await this.passwordStorage.savePrivateKeyPassword(keyHash, passphrase)
+            }
         } catch (error) {
-            await fs.unlink(this.getKeyPath(id)).catch(unlinkError => {
-                if (unlinkError?.code !== 'ENOENT') {
-                    throw unlinkError
-                }
-            })
+            if (this.getByID(id)) {
+                await this.replaceKeys(this.config.store.ssh.keys.filter((entry: SSHStoredKey) => entry.id !== id)).catch(() => null)
+            }
+            if (!this.getByID(id)) {
+                await fs.unlink(this.getKeyPath(id)).catch(unlinkError => {
+                    if (unlinkError?.code !== 'ENOENT') {
+                        throw unlinkError
+                    }
+                })
+            }
             throw error
         }
         return { key, ref: this.makeRef(id) }
     }
 
-    async generateKey (label: string, type: SSHGeneratedKeyType = 'ed25519'): Promise<SSHSavedKey> {
+    async generateKey (label: string, type: SSHGeneratedKeyType = 'ed25519', passphrase?: string): Promise<SSHSavedKey> {
+        const privateKeyEncoding = passphrase
+            ? { type: 'pkcs8' as const, format: 'pem' as const, cipher: 'aes-256-cbc', passphrase }
+            : { type: 'pkcs8' as const, format: 'pem' as const }
         const privateKey = type === 'rsa'
             ? crypto.generateKeyPairSync('rsa', {
                 modulusLength: 4096,
-                privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+                privateKeyEncoding,
                 publicKeyEncoding: { type: 'spki', format: 'pem' },
             }).privateKey
             : crypto.generateKeyPairSync('ed25519', {
-                privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+                privateKeyEncoding,
                 publicKeyEncoding: { type: 'spki', format: 'pem' },
             }).privateKey
-        return this.savePrivateKey(label, privateKey)
+        return this.savePrivateKey(label, privateKey, passphrase)
     }
 
-    async importPrivateKeyFromUpload (label?: string): Promise<SSHSavedKey|null> {
+    async importPrivateKeyFromUpload (label?: string, passphrase?: string): Promise<SSHSavedKey|null> {
         const uploads = await this.platform.startUpload({ multiple: false })
         if (!uploads.length) {
             return null
         }
         const upload = uploads[0]
         const contents = Buffer.from(await upload.readAll()).toString('utf-8')
-        return this.savePrivateKey(label ?? upload.getName(), contents)
+        return this.savePrivateKey(label ?? upload.getName(), contents, passphrase)
     }
 
     async renameKey (id: string, label: string): Promise<void> {
@@ -251,7 +265,7 @@ export class SSHKeyStorageService {
         return `${normalized}\n`
     }
 
-    private async inspectPrivateKey (privateKey: string, label: string): Promise<{ type: string, fingerprint: string, publicKey: string }> {
+    private async inspectPrivateKey (privateKey: string, label: string, passphrase?: string): Promise<{ type: string, fingerprint: string, publicKey: string }> {
         try {
             russh.parsePublicKey(privateKey)
             throw new Error('Paste a private key, not a public key')
@@ -261,8 +275,24 @@ export class SSHKeyStorageService {
             }
         }
 
+        const initialPassphrase = privateKey.includes('-----BEGIN ENCRYPTED PRIVATE KEY-----') ? '' : undefined
+        if (passphrase) {
+            let canOpenWithoutPassphrase = false
+            try {
+                await russh.KeyPair.parse(privateKey, initialPassphrase)
+                canOpenWithoutPassphrase = true
+            } catch (error) {
+                if (!SSHKeyStorageService.encryptedPrivateKeyErrors.has(String(error))) {
+                    throw new Error(`Could not read the private key: ${error}`)
+                }
+            }
+            if (canOpenWithoutPassphrase) {
+                throw new Error('This private key is not encrypted; leave the passphrase empty')
+            }
+        }
+
         try {
-            const keyPair = await russh.KeyPair.parse(privateKey, privateKey.includes('-----BEGIN ENCRYPTED PRIVATE KEY-----') ? '' : undefined)
+            const keyPair = await russh.KeyPair.parse(privateKey, passphrase?.length ? passphrase : initialPassphrase)
             const publicKey = keyPair['inner'].publicKey()
             const comment = label.replace(/\s+/g, '-')
             return {
@@ -272,6 +302,9 @@ export class SSHKeyStorageService {
             }
         } catch (error) {
             if (SSHKeyStorageService.encryptedPrivateKeyErrors.has(String(error)) && /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(privateKey)) {
+                if (passphrase) {
+                    throw new Error('Incorrect private key passphrase')
+                }
                 return {
                     type: 'encrypted',
                     fingerprint: '',

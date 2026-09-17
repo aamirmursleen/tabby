@@ -15,6 +15,7 @@ export class SSHSettingsTabComponent {
     keySearch = ''
     newKeyName = ''
     newPrivateKey = ''
+    newPrivateKeyPassphrase = ''
     generatedKeyType: SSHGeneratedKeyType = 'ed25519'
     keyBusy = false
 
@@ -55,23 +56,30 @@ export class SSHSettingsTabComponent {
 
     async savePastedKey (): Promise<void> {
         await this.runKeyAction(async () => {
-            await this.sshKeys.savePrivateKey(this.newKeyName, this.newPrivateKey)
+            await this.sshKeys.savePrivateKey(this.newKeyName, this.newPrivateKey, this.newPrivateKeyPassphrase)
             this.newKeyName = ''
             this.newPrivateKey = ''
+            this.newPrivateKeyPassphrase = ''
         }, 'SSH key saved')
     }
 
     async generateKey (): Promise<void> {
         await this.runKeyAction(async () => {
-            await this.sshKeys.generateKey(this.newKeyName, this.generatedKeyType)
+            await this.sshKeys.generateKey(this.newKeyName, this.generatedKeyType, this.newPrivateKeyPassphrase)
             this.newKeyName = ''
+            this.newPrivateKeyPassphrase = ''
         }, 'SSH key generated')
     }
 
     async importKey (): Promise<void> {
         await this.runKeyAction(async () => {
-            await this.sshKeys.importPrivateKeyFromUpload(this.newKeyName || undefined)
+            const saved = await this.sshKeys.importPrivateKeyFromUpload(this.newKeyName || undefined, this.newPrivateKeyPassphrase)
+            if (!saved) {
+                return false
+            }
             this.newKeyName = ''
+            this.newPrivateKeyPassphrase = ''
+            return true
         }, 'SSH key imported')
     }
 
@@ -123,7 +131,10 @@ export class SSHSettingsTabComponent {
         }
         this.keyBusy = true
         try {
-            await action()
+            const result = await action()
+            if (result === false) {
+                return
+            }
             this.reloadKeys()
             this.notifications.notice(success)
         } catch (error) {
