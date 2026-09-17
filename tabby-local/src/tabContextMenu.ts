@@ -6,6 +6,24 @@ import { LocalProfile, UACService } from './api'
 
 /** @hidden */
 @Injectable()
+export class RefreshLocalTabContextMenu extends TabContextMenuItemProvider {
+    weight = 1
+
+    constructor (private translate: TranslateService) { super() }
+
+    async getItems (tab: BaseTabComponent): Promise<MenuItemOptions[]> {
+        if (!(tab instanceof TerminalTabComponent)) {
+            return []
+        }
+        return [{
+            label: this.translate.instant('Refresh terminal'),
+            click: () => { setTimeout(() => tab.refreshSession()) },
+        }]
+    }
+}
+
+/** @hidden */
+@Injectable()
 export class NewTabContextMenu extends TabContextMenuItemProvider {
     weight = 10
 

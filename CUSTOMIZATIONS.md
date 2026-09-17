@@ -6,7 +6,9 @@ The current custom app is installed as **Aamir Terminal.app**, with bundle ident
 
 Its profile is `~/Library/Application Support/Aamir Terminal`. On 2026-09-14, the saved config and local/session storage were copied from the existing `tabby` profile without changing the original. This is a snapshot of saved state, not a transfer of running terminal processes. Subsequent profile changes are independent.
 
-Version `1.0.236-aamir.15` selects **Save passphrase for future connections** by default when an encrypted SSH key needs to be unlocked. The choice remains visible and can be turned off. The passphrase is saved only after it successfully unlocks the key; a macOS Keychain write is read back before the app treats it as saved. If Keychain rejects the read, the app reports that credential access needs attention instead of silently treating the write as durable. The current live `.11` process must be quit and reopened to load this update. Ad-hoc signing can still require renewed Keychain access after an app update, as described below.
+Version `1.0.236-aamir.16` adds **Refresh** to local Mac terminal panes. The local shell now has the same wrench toolbar pattern as SSH, plus a Refresh item in its right-click menu. Refresh restarts only that pane's shell, keeps its current working directory and split layout, and does not restore a stale PTY. If another command is running, the confirmation defaults to Cancel.
+
+Version `1.0.236-aamir.15` selects **Save passphrase for future connections** by default when an encrypted SSH key needs to be unlocked. The choice remains visible and can be turned off. The passphrase is saved only after it successfully unlocks the key; a macOS Keychain write is read back before the app treats it as saved. If Keychain rejects the read, the app reports that credential access needs attention instead of silently treating the write as durable. An already-running app must be quit and reopened to load an update. Ad-hoc signing can still require renewed Keychain access after an app update, as described below.
 
 Version `1.0.236-aamir.13` restores SSH panes using the current saved server profile when one exists. This applies both to startup session recovery and to manually opened saved layouts, so later changes to a server's host, port, username or private key take effect without replacing the layout. A deleted profile still falls back to the connection snapshot in its saved tab. Local Claude panes now record a safe `claude --resume` picker for app restart when Claude is running at snapshot time; no previous permission-bypass flags are replayed. Existing snapshots that predate this version cannot identify a past Claude session retroactively.
 
@@ -17,6 +19,7 @@ Build the ARM64 app using the dedicated configuration (compile the app/plugins f
 ```sh
 ditto tabby-core/dist builtin-plugins/tabby-core/dist
 ditto tabby-terminal/dist builtin-plugins/tabby-terminal/dist
+ditto tabby-local/dist builtin-plugins/tabby-local/dist
 ditto tabby-ssh/dist builtin-plugins/tabby-ssh/dist
 node node_modules/electron-builder/cli.js --config electron-builder.aamir.yml --mac --arm64 --dir
 codesign --force --deep --sign - --options 0 'dist/aamir-terminal-arm64/mac-arm64/Aamir Terminal.app'

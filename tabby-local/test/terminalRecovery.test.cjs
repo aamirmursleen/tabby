@@ -6,6 +6,7 @@ const { loadDeclarations } = require('../../test/helpers/source.cjs')
 function component () {
     return loadDeclarations('tabby-local/src/components/terminalTab.component.ts', ['TerminalTabComponent'], {
         Component: () => target => target, Input: () => () => {}, Optional: () => () => {},
+        require: () => '',
         UACService: class {},
         BaseTerminalTabComponent: class {
             ngOnInit () {}

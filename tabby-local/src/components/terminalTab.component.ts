@@ -10,7 +10,7 @@ import { findCodexSession } from '../utils/codexSession'
 /** @hidden */
 @Component({
     selector: 'terminalTab',
-    template: BaseTerminalTabComponent.template,
+    template: `${BaseTerminalTabComponent.template} ${require('./terminalTab.component.pug')}`,
     styles: BaseTerminalTabComponent.styles,
     animations: BaseTerminalTabComponent.animations,
 })
@@ -19,6 +19,8 @@ export class TerminalTabComponent extends BaseTerminalTabComponent<LocalProfile>
     @Input() recoveryCommand: string|null = null
     @Input() recovered = false
     session: Session|null = null
+    enableToolbar = true
+    refreshing = false
 
     // eslint-disable-next-line @typescript-eslint/no-useless-constructor
     constructor (
@@ -67,7 +69,7 @@ export class TerminalTabComponent extends BaseTerminalTabComponent<LocalProfile>
         super.onFrontendReady()
     }
 
-    initializeSession (columns: number, rows: number): void {
+    initializeSession (columns: number, rows: number, cwd?: string|null, fresh = false): Promise<void> {
 
         const session = new Session(this.injector)
 
@@ -81,16 +83,69 @@ export class TerminalTabComponent extends BaseTerminalTabComponent<LocalProfile>
         const recoveryCommand = this.recoveryCommand
         this.recoveryCommand = null
         const recoveryOptions = buildLocalRecoveryOptions(this.profile.options, recoveryCommand)
-        session.start({
+        const options = {
             ...recoveryOptions ?? this.profile.options,
             width: columns,
             height: rows,
-        }).catch(error => {
+        }
+        if (cwd) {
+            options.cwd = cwd
+        }
+        if (fresh) {
+            options.restoreFromPTYID = null
+        }
+        const starting = session.start(options).catch(error => {
             this.logger.warn('Could not start terminal session:', error)
+            if (fresh) {
+                throw error
+            }
         })
 
         this.setSession(session)
         this.recoveryStateChangedHint.next()
+        return starting
+    }
+
+    async refreshSession (): Promise<void> {
+        if (this.refreshing || !this.frontendIsReady || !this.size) {
+            return
+        }
+        this.refreshing = true
+        try {
+            const current = this.session
+            const children = await current?.getChildProcesses() ?? []
+            if (children.length) {
+                const choice = await this.platform.showMessageBox({
+                    type: 'warning',
+                    message: this.translate.instant(_('Refreshing will stop "{command}". Continue?'), children[0]),
+                    buttons: [
+                        this.translate.instant(_('Refresh terminal')),
+                        this.translate.instant(_('Cancel')),
+                    ],
+                    defaultId: 1,
+                    cancelId: 1,
+                })
+                if (choice.response !== 0) {
+                    return
+                }
+            }
+
+            let cwd: string|null = null
+            try {
+                cwd = await current?.getWorkingDirectory() ?? null
+            } catch (error) {
+                this.logger.warn('Could not read working directory before refreshing:', error)
+            }
+            this.setSession(null)
+            await current?.destroy()
+            this.frontend?.resetTerminalModes()
+            await this.initializeSession(this.size.columns, this.size.rows, cwd, true)
+        } catch (error) {
+            this.logger.warn('Could not refresh terminal session:', error)
+            this.notifications.error(this.translate.instant('Could not refresh terminal'))
+        } finally {
+            this.refreshing = false
+        }
     }
 
     async getRecoveryToken (options?: GetRecoveryTokenOptions): Promise<any> {
