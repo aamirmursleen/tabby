@@ -10,6 +10,7 @@ export class SSHConfigProvider extends ConfigProvider {
             agentPath: null,
             x11Display: null,
             knownHosts: [],
+            keys: [],
             verifyHostKeys: true,
         },
         hotkeys: {

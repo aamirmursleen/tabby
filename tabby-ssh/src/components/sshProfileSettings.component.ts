@@ -6,6 +6,7 @@ import { firstBy } from 'thenby'
 import { FileProvidersService, Platform, HostAppService, PromptModalComponent, PartialProfile, ProfilesService, ProfileSettingsComponent, FullyDefined, ProxifiedConfig } from 'tabby-core'
 import { LoginScriptsSettingsComponent } from 'tabby-terminal'
 import { PasswordStorageService } from '../services/passwordStorage.service'
+import { SSHKeyStorageService, SSHStoredKey } from '../services/sshKeys.service'
 import { ForwardedPortConfig, SSHAlgorithmType, SSHProfile } from '../api'
 import { supportedAlgorithms } from '../algorithms'
 import { SSHProfilesService } from '../profiles'
@@ -24,6 +25,8 @@ export class SSHProfileSettingsComponent implements ProfileSettingsComponent<SSH
     supportedAlgorithms = supportedAlgorithms
     algorithms: Record<string, Record<string, boolean>> = {}
     jumpHosts: PartialProfile<SSHProfile>[]
+    savedKeys: SSHStoredKey[] = []
+    selectedSavedKeyRef: string|null = null
     @ViewChild('loginScriptsSettings') loginScriptsSettings: LoginScriptsSettingsComponent|null
 
     constructor (
@@ -32,9 +35,11 @@ export class SSHProfileSettingsComponent implements ProfileSettingsComponent<SSH
         private passwordStorage: PasswordStorageService,
         private ngbModal: NgbModal,
         private fileProviders: FileProvidersService,
+        public sshKeys: SSHKeyStorageService,
     ) { }
 
     async ngOnInit () {
+        this.refreshSavedKeys()
         this.jumpHosts = (await this.profilesService.getProfiles({ includeBuiltin: false })).filter(x => x.type === 'ssh' && x !== this.profile)
         this.jumpHosts.sort(firstBy(x => this.getJumpHostLabel(x)))
 
@@ -96,8 +101,53 @@ export class SSHProfileSettingsComponent implements ProfileSettingsComponent<SSH
         }
     }
 
+    async importAndSavePrivateKey () {
+        const saved = await this.sshKeys.importPrivateKeyFromUpload().catch(error => {
+            console.error('Could not import SSH key', error)
+            return null
+        })
+        if (saved) {
+            this.addPrivateKeyRef(saved.ref)
+            this.refreshSavedKeys()
+        }
+    }
+
+    addSavedPrivateKey () {
+        if (!this.selectedSavedKeyRef) {
+            return
+        }
+        this.addPrivateKeyRef(this.selectedSavedKeyRef)
+    }
+
     removePrivateKey (path: string) {
         this.profile.options.privateKeys = this.profile.options.privateKeys.filter(x => x !== path)
+    }
+
+    getPrivateKeyLabel (path: string): string {
+        return this.sshKeys.getLabel(path)
+    }
+
+    getPrivateKeyRef (key: SSHStoredKey): string {
+        return this.sshKeys.makeRef(key.id)
+    }
+
+    private addPrivateKeyRef (ref: string): void {
+        if (this.profile.options.privateKeys.includes(ref)) {
+            return
+        }
+        this.profile.options.auth = 'publicKey'
+        this.profile.options.privateKeys = [
+            ...this.profile.options.privateKeys,
+            ref,
+        ]
+    }
+
+    private refreshSavedKeys (): void {
+        this.savedKeys = this.sshKeys.keys
+        const currentSelection = this.selectedSavedKeyRef && this.savedKeys.some(key => this.getPrivateKeyRef(key) === this.selectedSavedKeyRef)
+        if (!currentSelection) {
+            this.selectedSavedKeyRef = this.savedKeys[0] ? this.getPrivateKeyRef(this.savedKeys[0]) : null
+        }
     }
 
     save () {

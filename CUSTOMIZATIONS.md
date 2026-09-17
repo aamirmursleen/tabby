@@ -48,6 +48,12 @@ Version `1.0.236-aamir.4` fixes the Snippets startup crash: literal brace icons 
 
 ## SSH key passphrases
 
+Version `1.0.236-aamir.10` adds a reusable SSH key library in SSH settings. Private keys can be pasted, imported from a file, or generated as ED25519/RSA keys. The private-key body is saved as a local `0600` file beside the Aamir Terminal config, while `config.yaml` stores only metadata such as label, algorithm, fingerprint and public key. SSH profiles can select saved keys by name and keep existing file-based private-key references for backward compatibility.
+
+Saved key references use the `ssh-key://` file-provider prefix, so existing SSH authentication and WinSCP conversion paths can load them like other private-key files. Public `.pub` lookups return the stored public key when available, which keeps agent-identity probing compatible. Deleting a saved key removes its metadata and private-key file. Passphrases for encrypted saved keys continue to use the existing private-key passphrase flow below.
+
+Verification: 169 regression tests, SSH TypeScript, SSH lint with an expanded Node heap, webpack, and focused key-library tests. Tests cover pasted-key validation, generated ED25519 auth parsing, `0600` storage, no raw private key in config, duplicate-name rejection, failed metadata rollback, delete cleanup, file-provider retrieval and profile attachment of saved keys. No real user SSH keys or live servers are used in tests.
+
 Version `1.0.236-aamir.5` shares one private-key unlock operation across concurrent connections using the same key in a window. Existing Tabby passphrase identifiers remain compatible. The in-flight operation is removed after success, failure or cancellation; no permanent in-memory passphrase cache is added.
 
 Remembered passphrases are saved only after successful key parsing, and the unlock waits for the credential-storage write. Incorrect input and cancelled prompts no longer delete saved passphrases. Cancel also settles concurrent requests instead of reopening the prompt. Storage-access and save failures produce feedback while allowing manual unlocking. Encrypted PKCS8 PEM keys use the correct native decoder and recognize incorrect-passphrase errors. Profiles restricted to keys or an agent skip unrelated server-password lookups.

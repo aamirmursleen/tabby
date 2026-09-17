@@ -61,4 +61,84 @@ h3 SSH
         (ngModelChange)='config.save()'
     )
 
+h3.mt-5(translate) Keychain
+
+.form-line
+    .header
+        .title(translate) New SSH key
+        .description(translate) Save a private key once and reuse it in any SSH profile
+    .w-100
+        .d-flex.mb-2
+            input.form-control.me-2(
+                type='text',
+                placeholder='Key name',
+                [(ngModel)]='newKeyName',
+                [disabled]='keyBusy',
+            )
+            select.form-control.w-auto(
+                [(ngModel)]='generatedKeyType',
+                [disabled]='keyBusy',
+            )
+                option(value='ed25519') ED25519
+                option(value='rsa') RSA 4096
+        textarea.form-control.mb-2(
+            rows='7',
+            placeholder='Paste private key',
+            [(ngModel)]='newPrivateKey',
+            [disabled]='keyBusy',
+            spellcheck='false',
+        )
+        .d-flex
+            button.btn.btn-primary.me-2(
+                (click)='savePastedKey()',
+                [disabled]='keyBusy || !newKeyName.trim() || !newPrivateKey.trim()',
+            )
+                i.fas.fa-save
+                span(translate) Save pasted key
+            button.btn.btn-secondary.me-2(
+                (click)='importKey()',
+                [disabled]='keyBusy',
+            )
+                i.fas.fa-folder-open
+                span(translate) Import file
+            button.btn.btn-secondary(
+                (click)='generateKey()',
+                [disabled]='keyBusy || !newKeyName.trim()',
+            )
+                i.fas.fa-key
+                span(translate) Generate
+
+.mb-3
+    input.form-control(
+        type='search',
+        placeholder='Search keys',
+        [(ngModel)]='keySearch',
+    )
+
+.list-group.mb-3(*ngIf='filteredKeys.length')
+    .list-group-item.d-flex.align-items-center.p-2(*ngFor='let key of filteredKeys; trackBy: trackKey')
+        i.fas.fa-key.fa-fw.me-3
+        .me-auto.overflow-hidden
+            .fw-bold.text-truncate {{key.label}}
+            .text-muted.small.text-truncate {{key.type || 'Unknown type'}} {{key.fingerprint}}
+        button.btn.btn-link(
+            *ngIf='key.publicKey',
+            (click)='copyPublicKey(key)',
+            ngbTooltip='Copy public key',
+        )
+            i.fas.fa-copy
+        button.btn.btn-link(
+            (click)='renameKey(key)',
+            ngbTooltip='Rename',
+        )
+            i.fas.fa-pencil-alt
+        button.btn.btn-link.text-danger(
+            (click)='deleteKey(key)',
+            ngbTooltip='Delete',
+        )
+            i.fas.fa-trash
+
+.text-muted.mb-3(*ngIf='!filteredKeys.length && keySearch', translate) No keys match this search
+.text-muted.mb-3(*ngIf='!keys.length && !keySearch', translate) No saved SSH keys
+
 .alert.alert-info(translate) SSH connection management is now done through the "Profiles & connections" tab

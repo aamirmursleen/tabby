@@ -186,12 +186,28 @@ ul.nav-tabs(ngbNav, #nav='ngbNav')
                 .list-group.mb-2
                     .list-group-item.d-flex.align-items-center.p-1.ps-3(*ngFor='let path of profile.options.privateKeys')
                         i.fas.fa-key
-                        .no-wrap.me-auto {{path}}
+                        .no-wrap.me-auto {{getPrivateKeyLabel(path)}}
                         button.btn.btn-link((click)='removePrivateKey(path)')
                             i.fas.fa-trash
+                .d-flex.align-items-end.mb-2(*ngIf='savedKeys.length')
+                    .flex-grow-1.me-2
+                        label.small.text-muted(translate) Saved key
+                        select.form-control(
+                            [(ngModel)]='selectedSavedKeyRef',
+                        )
+                            option([ngValue]='getPrivateKeyRef(key)', *ngFor='let key of savedKeys') {{key.label}} ({{key.type || 'unknown'}})
+                    button.btn.btn-secondary(
+                        (click)='addSavedPrivateKey()',
+                        [disabled]='!selectedSavedKeyRef',
+                    )
+                        i.fas.fa-plus
+                        span(translate) Use saved key
+                button.btn.btn-secondary.me-2((click)='importAndSavePrivateKey()')
+                    i.fas.fa-folder-plus
+                    span(translate) Import and save key
                 button.btn.btn-secondary((click)='addPrivateKey()')
                     i.fas.fa-folder-open
-                    span(translate) Add a private key
+                    span(translate) Add key file only
 
     li(ngbNavItem)
         a(ngbNavLink, translate) Ports
