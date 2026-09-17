@@ -3,7 +3,7 @@ import { Component, ViewChild } from '@angular/core'
 import { NgbModal } from '@ng-bootstrap/ng-bootstrap'
 import { firstBy } from 'thenby'
 
-import { FileProvidersService, Platform, HostAppService, PromptModalComponent, PartialProfile, ProfilesService, ProfileSettingsComponent, FullyDefined, ProxifiedConfig } from 'tabby-core'
+import { FileProvidersService, Platform, HostAppService, PromptModalComponent, PartialProfile, ProfilesService, ProfileSettingsComponent, FullyDefined, ProxifiedConfig, NotificationsService } from 'tabby-core'
 import { LoginScriptsSettingsComponent } from 'tabby-terminal'
 import { PasswordStorageService } from '../services/passwordStorage.service'
 import { SSHKeyStorageService, SSHStoredKey } from '../services/sshKeys.service'
@@ -27,6 +27,10 @@ export class SSHProfileSettingsComponent implements ProfileSettingsComponent<SSH
     jumpHosts: PartialProfile<SSHProfile>[]
     savedKeys: SSHStoredKey[] = []
     selectedSavedKeyRef: string|null = null
+    showPastePrivateKeyForm = false
+    pastedPrivateKeyName = ''
+    pastedPrivateKey = ''
+    pastedPrivateKeyBusy = false
     @ViewChild('loginScriptsSettings') loginScriptsSettings: LoginScriptsSettingsComponent|null
 
     constructor (
@@ -36,6 +40,7 @@ export class SSHProfileSettingsComponent implements ProfileSettingsComponent<SSH
         private ngbModal: NgbModal,
         private fileProviders: FileProvidersService,
         public sshKeys: SSHKeyStorageService,
+        private notifications: NotificationsService,
     ) { }
 
     async ngOnInit () {
@@ -117,6 +122,37 @@ export class SSHProfileSettingsComponent implements ProfileSettingsComponent<SSH
             return
         }
         this.addPrivateKeyRef(this.selectedSavedKeyRef)
+    }
+
+    startPastingPrivateKey () {
+        this.showPastePrivateKeyForm = true
+        this.pastedPrivateKeyName = this.pastedPrivateKeyName || this.profile.name || this.profile.options.host || ''
+    }
+
+    cancelPastedPrivateKey () {
+        this.showPastePrivateKeyForm = false
+        this.pastedPrivateKey = ''
+    }
+
+    async savePastedPrivateKey () {
+        if (this.pastedPrivateKeyBusy || !this.pastedPrivateKey.trim()) {
+            return
+        }
+        this.pastedPrivateKeyBusy = true
+        try {
+            const label = this.pastedPrivateKeyName || this.profile.name || this.profile.options.host || 'SSH key'
+            const saved = await this.sshKeys.savePrivateKey(label, this.pastedPrivateKey)
+            this.addPrivateKeyRef(saved.ref)
+            this.refreshSavedKeys()
+            this.selectedSavedKeyRef = saved.ref
+            this.showPastePrivateKeyForm = false
+            this.pastedPrivateKey = ''
+            this.notifications.notice('SSH key saved')
+        } catch (error) {
+            this.notifications.error('Could not save SSH key', String(error))
+        } finally {
+            this.pastedPrivateKeyBusy = false
+        }
     }
 
     removePrivateKey (path: string) {

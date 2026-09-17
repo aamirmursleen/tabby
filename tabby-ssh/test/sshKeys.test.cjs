@@ -165,3 +165,48 @@ test('SSH profile settings can attach saved keys by label while preserving old f
     assert.equal(component.profile.options.auth, 'publicKey')
     assert.equal(component.getPrivateKeyLabel(keyRef), 'Deploy key (ssh-ed25519)')
 })
+
+test('SSH profile settings can paste and save a key directly onto the profile', async () => {
+    const { SSHProfileSettingsComponent } = loadDeclarations('tabby-ssh/src/components/sshProfileSettings.component.ts', [
+        'SSHProfileSettingsComponent',
+    ], {
+        Component: () => target => target,
+        ViewChild: () => () => {},
+        Platform: {},
+        SSHAlgorithmType: {},
+        supportedAlgorithms: {},
+        firstBy: () => () => 0,
+        LoginScriptsSettingsComponent: class {},
+    })
+    const keyRef = `ssh-key://${savedKeyID}`
+    const savedCalls = []
+    const notices = []
+    const sshKeys = {
+        keys: [],
+        makeRef: key => `ssh-key://${key}`,
+        getLabel: ref => ref,
+        savePrivateKey: async (label, contents) => {
+            savedCalls.push([label, contents])
+            sshKeys.keys = [{ id: savedKeyID, label, type: 'ssh-ed25519' }]
+            return { ref: keyRef, key: sshKeys.keys[0] }
+        },
+    }
+    const notifications = {
+        notice: message => notices.push(message),
+        error: () => assert.fail('Saving a valid pasted key must not show an error'),
+    }
+    const component = new SSHProfileSettingsComponent({}, {}, {}, {}, {}, sshKeys, notifications)
+    component.profile = { name: 'MoonPush Sami', options: { auth: null, privateKeys: [] } }
+    component.pastedPrivateKey = 'test-only-private-key'
+
+    await component.savePastedPrivateKey()
+    await component.savePastedPrivateKey()
+
+    assert.deepEqual(savedCalls, [['MoonPush Sami', 'test-only-private-key']])
+    assert.deepEqual(Array.from(component.profile.options.privateKeys), [keyRef])
+    assert.equal(component.profile.options.auth, 'publicKey')
+    assert.equal(component.showPastePrivateKeyForm, false)
+    assert.equal(component.pastedPrivateKey, '')
+    assert.equal(component.selectedSavedKeyRef, keyRef)
+    assert.deepEqual(notices, ['SSH key saved'])
+})

@@ -202,10 +202,47 @@ ul.nav-tabs(ngbNav, #nav='ngbNav')
                     )
                         i.fas.fa-plus
                         span(translate) Use saved key
-                button.btn.btn-secondary.me-2((click)='importAndSavePrivateKey()')
+                .mb-2(*ngIf='showPastePrivateKeyForm')
+                    input.form-control.mb-2(
+                        type='text',
+                        placeholder='Key name',
+                        [(ngModel)]='pastedPrivateKeyName',
+                        [disabled]='pastedPrivateKeyBusy',
+                    )
+                    textarea.form-control.mb-2(
+                        rows='6',
+                        placeholder='Paste private key',
+                        [(ngModel)]='pastedPrivateKey',
+                        [disabled]='pastedPrivateKeyBusy',
+                        spellcheck='false',
+                    )
+                    button.btn.btn-primary.me-2(
+                        (click)='savePastedPrivateKey()',
+                        [disabled]='pastedPrivateKeyBusy || !pastedPrivateKey.trim()',
+                    )
+                        i.fas.fa-save
+                        span(translate) Save and use key
+                    button.btn.btn-secondary(
+                        (click)='cancelPastedPrivateKey()',
+                        [disabled]='pastedPrivateKeyBusy',
+                    )
+                        span(translate) Cancel
+                button.btn.btn-secondary.me-2(
+                    *ngIf='!showPastePrivateKeyForm',
+                    (click)='startPastingPrivateKey()',
+                )
+                    i.fas.fa-paste
+                    span(translate) Paste and save key
+                button.btn.btn-secondary.me-2(
+                    (click)='importAndSavePrivateKey()',
+                    [disabled]='pastedPrivateKeyBusy',
+                )
                     i.fas.fa-folder-plus
                     span(translate) Import and save key
-                button.btn.btn-secondary((click)='addPrivateKey()')
+                button.btn.btn-secondary(
+                    (click)='addPrivateKey()',
+                    [disabled]='pastedPrivateKeyBusy',
+                )
                     i.fas.fa-folder-open
                     span(translate) Add key file only
 
