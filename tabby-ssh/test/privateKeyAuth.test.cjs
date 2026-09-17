@@ -18,6 +18,7 @@ function setup (options = {}) {
         async getPassword (service, account) {
             events.push(['read', service, account])
             if (options.readError) { throw options.readError }
+            if (options.readErrorAfterWrite && events.some(event => event[0] === 'write')) { throw options.readErrorAfterWrite }
             return records.get(service) ?? null
         },
         async setPassword (service, account, value) {
@@ -154,6 +155,19 @@ test('leaving Remember unchecked does not persist the passphrase', async () => {
     assert.equal(h.events.filter(event => event[0] === 'write' || event[0] === 'delete').length, 0)
 })
 
+test('private key passphrase prompts offer Remember already selected', async () => {
+    const h = setup({ prompt: (_index, modal) => {
+        assert.equal(modal.componentInstance.showRememberCheckbox, true)
+        assert.equal(modal.componentInstance.remember, true)
+        assert.equal(modal.componentInstance.rememberLabel, 'Save passphrase for future connections')
+        return { value: 'unlock-first', remember: modal.componentInstance.remember }
+    } })
+    await h.session().loadPrivateKeyWithPassphraseMaybe('first')
+    assert.equal(h.records.get(storageID('first')), 'unlock-first')
+    await h.session().loadPrivateKeyWithPassphraseMaybe('first')
+    assert.equal(h.prompts.length, 1)
+})
+
 test('different keys keep separate unlock requests and credentials', async () => {
     const h = setup({ prompt: index => ({ value: index === 0 ? 'unlock-first' : 'unlock-second', remember: true }) })
     await Promise.all([
@@ -193,6 +207,18 @@ test('failed persistence is reported while preserving the successfully unlocked 
     assert.equal(h.records.size, 0)
     assert.equal(h.notifications.length, 1)
     assert.match(h.notifications[0][0], /save.*passphrase/i)
+})
+
+test('a Keychain write that cannot be read back is reported as a failed save', async () => {
+    const h = setup({
+        prompt: () => ({ value: 'unlock-first', remember: true }),
+        readErrorAfterWrite: new Error('Keychain access denied'),
+    })
+    await h.session().loadPrivateKeyWithPassphraseMaybe('first')
+    assert.equal(h.records.get(storageID('first')), 'unlock-first')
+    assert.equal(h.notifications.length, 1)
+    assert.match(h.notifications[0][0], /save.*passphrase/i)
+    assert.equal(h.events.filter(event => event[0] === 'delete').length, 0)
 })
 
 test('private key passphrase saves await the encrypted vault and propagate storage failures', async () => {

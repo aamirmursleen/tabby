@@ -81,7 +81,10 @@ export class PasswordStorageService {
             await this.vault.addSecret({ type: VAULT_SECRET_TYPE_PASSPHRASE, key, value: password })
         } else {
             const key = this.getKeytarKeyForPrivateKey(id)
-            return keytar.setPassword(key, 'user', password)
+            await keytar.setPassword(key, 'user', password)
+            if (await keytar.getPassword(key, 'user') !== password) {
+                throw new Error('Saved private key passphrase is not readable from credential storage')
+            }
         }
     }
 

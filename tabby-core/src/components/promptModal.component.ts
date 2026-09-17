@@ -10,6 +10,7 @@ export class PromptModalComponent {
     @Input() prompt: string|undefined
     @Input() password: boolean
     @Input() remember: boolean
+    @Input() rememberLabel = 'Remember'
     @Input() showRememberCheckbox: boolean
     @ViewChild('input') input: ElementRef
 

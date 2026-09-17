@@ -972,7 +972,8 @@ export class SSHSession {
             modal.componentInstance.prompt = 'Private key passphrase'
             modal.componentInstance.password = true
             modal.componentInstance.showRememberCheckbox = true
-            modal.componentInstance.remember = savedPassphrase !== null
+            modal.componentInstance.remember = true
+            modal.componentInstance.rememberLabel = 'Save passphrase for future connections'
 
             const result = await modal.result.catch(() => null)
             if (!result || typeof result.value !== 'string') {
@@ -991,7 +992,7 @@ export class SSHSession {
                 try {
                     await this.passwordStorage.savePrivateKeyPassword(keyHash, result.value)
                 } catch {
-                    this.notifications.error('Could not save the private key passphrase. You may be asked again next time.')
+                    this.notifications.error('Could not save and verify the private key passphrase. Check credential storage access, then reconnect.')
                 }
             }
             return key

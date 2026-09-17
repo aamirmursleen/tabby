@@ -8,8 +8,9 @@ const { spawn, execFileSync } = require('node:child_process')
 async function main () {
     if (!process.argv[2]) { throw new Error('Provide the packaged .app path') }
     const artifacts = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tabby-packaged-smoke-')))
-    const bundle = path.join(artifacts, 'Tabby Custom.app')
+    const bundle = path.join(artifacts, path.basename(path.resolve(process.argv[2])))
     execFileSync('/usr/bin/ditto', [path.resolve(process.argv[2]), bundle])
+    const executable = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleExecutable', path.join(bundle, 'Contents/Info.plist')], { encoding: 'utf8' }).trim()
     const profile = path.join(bundle, 'Contents/MacOS/data')
     fs.mkdirSync(profile)
     // Tabby's existing portable-data mode isolates config AND Electron storage.
@@ -25,7 +26,7 @@ async function main () {
     // No Developer ID is available for this local development build. Ad-hoc
     // signatures have no Team ID and cannot satisfy hardened library validation.
     execFileSync('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', '--options', '0', bundle])
-    const child = spawn(path.join(bundle, 'Contents/MacOS/Tabby Custom'), ['--hidden'], {
+    const child = spawn(path.join(bundle, 'Contents/MacOS', executable), ['--hidden'], {
         env: { ...process.env, TABBY_PACKAGED_SMOKE_PROFILE: profile, TABBY_CONFIG_DIRECTORY: profile, TABBY_DEV: '', TABBY_PLUGINS: '' },
         stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -49,7 +50,8 @@ async function main () {
         if (child.exitCode === null && child.signalCode === null && child.pid) {
             const exited = new Promise(resolve => child.once('exit', resolve))
             child.kill('SIGTERM')
-            await exited
+            const forceExit = setTimeout(() => child.kill('SIGKILL'), 3000)
+            try { await exited } finally { clearTimeout(forceExit) }
         }
         fs.writeFileSync(path.join(artifacts, 'main.log'), logs)
     }
