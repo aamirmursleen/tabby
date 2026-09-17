@@ -151,6 +151,27 @@ test('layout snapshots exclude terminal history, live PTY IDs and credential val
     assert.equal(restored.profile.options.restoreFromPTYID, undefined, 'opening a layout must not adopt another live terminal')
 })
 
+test('opening an old layout uses the current SSH profile key and connection settings', async () => {
+    const oldLayout = grid()
+    oldLayout.children[0].children[0].profile.options.user = 'old-user'
+    const { service, tab, config, recovered } = setup(oldLayout)
+    const saved = await service.createProfile(tab, 'Work')
+    const current = copy(grid().children[0].children[0].profile)
+    current.options.host = 'new-server.test'
+    current.options.port = 2222
+    current.options.privateKeys = ['ssh-key://11111111-1111-4111-8111-111111111111']
+    config.store.profiles.push(current)
+
+    await service.getNewTabParameters(saved)
+
+    const restored = recovered.find(value => value.type === 'app:ssh-tab' && value.profile.id === current.id)
+    assert.equal(restored.profile.options.host, 'new-server.test')
+    assert.equal(restored.profile.options.port, 2222)
+    assert.deepEqual(Array.from(restored.profile.options.privateKeys), current.options.privateKeys)
+    assert.equal(restored.profile.options.user, undefined)
+    assert.equal(saved.options.recoveryToken.children[0].children[0].profile.options.host, 'test.invalid')
+})
+
 test('split snapshots record and restore the focused pane after initializing every pane', async () => {
     const timers = []
     const { SplitTabComponent } = loadDeclarations('tabby-core/src/components/splitTab.component.ts', ['SplitTabComponent'], {

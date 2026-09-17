@@ -21,7 +21,14 @@ sourceModule.filename = sourcePath
 sourceModule.paths = Module._nodeModulePaths(path.dirname(sourcePath))
 sourceModule._compile(compiled.outputText, sourcePath)
 
-const { getCodexRecoveryCommand, buildCodexRecoveryOptions, getValidatedCodexRecoveryCommand } = sourceModule.exports
+const {
+    getCodexRecoveryCommand,
+    getClaudeRecoveryCommand,
+    buildCodexRecoveryOptions,
+    buildLocalRecoveryOptions,
+    getValidatedCodexRecoveryCommand,
+    getValidatedLocalRecoveryCommand,
+} = sourceModule.exports
 
 test('restores codex when it is present anywhere in the terminal process tree', () => {
     assert.equal(getCodexRecoveryCommand([
@@ -72,4 +79,19 @@ test('does not automatically rerun unrelated terminal commands', () => {
         { pid: 2, ppid: 1, command: 'vim' },
     ]), null)
     assert.equal(getCodexRecoveryCommand([]), null)
+})
+
+test('restored Claude panes open the resume picker without replaying unsafe CLI flags', () => {
+    const command = getClaudeRecoveryCommand([{ pid: 1, command: '/usr/local/bin/claude' }])
+    assert.equal(command, 'claude --resume')
+    assert.equal(getValidatedLocalRecoveryCommand(command), command)
+    assert.equal(getValidatedLocalRecoveryCommand('claude --resume; touch /tmp/unwanted'), null)
+    assert.equal(buildLocalRecoveryOptions({ command: '/bin/zsh', args: ['--login'] }, 'claude --resume; touch /tmp/unwanted'), null)
+    assert.equal(buildLocalRecoveryOptions({ command: 'python', args: [] }, command), null)
+    assert.equal(getClaudeRecoveryCommand([{ command: 'claude-helper' }]), null)
+    const options = { command: '/bin/zsh', args: ['--login'], cwd: '/project' }
+    const restored = buildLocalRecoveryOptions(options, command)
+    assert.match(restored.args[3], /^claude --resume; exec '\/bin\/zsh' '--login'$/)
+    assert.equal(restored.cwd, '/project')
+    assert.deepEqual(options.args, ['--login'])
 })

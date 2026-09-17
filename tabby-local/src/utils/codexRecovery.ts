@@ -4,6 +4,7 @@ interface TerminalProcess {
 
 export const CODEX_RECOVERY_COMMAND =
     'codex --sandbox danger-full-access --ask-for-approval never resume'
+export const CLAUDE_RECOVERY_COMMAND = 'claude --resume'
 
 function getExecutableName (command: string): string {
     return command.trim().replace(/\\/g, '/').split('/').pop()?.toLocaleLowerCase() ?? ''
@@ -11,6 +12,10 @@ function getExecutableName (command: string): string {
 
 export function isCodexProcess (command: string): boolean {
     return ['codex', 'codex.exe', 'codex-code-mode-host'].includes(getExecutableName(command))
+}
+
+export function isClaudeProcess (command: string): boolean {
+    return ['claude', 'claude.exe'].includes(getExecutableName(command))
 }
 
 export function getValidatedCodexRecoveryCommand (command: unknown): string|null {
@@ -33,9 +38,17 @@ export function getCodexRecoveryCommand (processes: readonly TerminalProcess[], 
     return getValidatedCodexRecoveryCommand(`${CODEX_RECOVERY_COMMAND} ${sessionID ?? ''}`) ?? CODEX_RECOVERY_COMMAND
 }
 
+export function getClaudeRecoveryCommand (processes: readonly TerminalProcess[]): string|null {
+    return processes.some(process => isClaudeProcess(process.command)) ? CLAUDE_RECOVERY_COMMAND : null
+}
+
+export function getValidatedLocalRecoveryCommand (command: unknown): string|null {
+    return getValidatedCodexRecoveryCommand(command) ?? (command === CLAUDE_RECOVERY_COMMAND ? CLAUDE_RECOVERY_COMMAND : null)
+}
+
 /** Start after interactive shell initialization; never race a prompt with timers. */
-export function buildCodexRecoveryOptions<T extends { command: string, args: string[] }> (options: T, command: unknown): T|null {
-    const validated = getValidatedCodexRecoveryCommand(command)
+export function buildLocalRecoveryOptions<T extends { command: string, args: string[] }> (options: T, command: unknown): T|null {
+    const validated = getValidatedLocalRecoveryCommand(command)
     if (!validated || !['zsh', 'bash', 'sh'].includes(getExecutableName(options.command))) {
         return null
     }
@@ -48,4 +61,8 @@ export function buildCodexRecoveryOptions<T extends { command: string, args: str
         ...options,
         args: [...options.args, '-i', '-c', `${validated}; exec ${restartShell}`],
     }
+}
+
+export function buildCodexRecoveryOptions<T extends { command: string, args: string[] }> (options: T, command: unknown): T|null {
+    return getValidatedCodexRecoveryCommand(command) ? buildLocalRecoveryOptions(options, command) : null
 }

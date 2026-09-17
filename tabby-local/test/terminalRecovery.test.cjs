@@ -13,6 +13,9 @@ function component () {
             subscribeUntilDestroyed () {}
         },
         isWindowsBuild: () => false, WIN_BUILD_CONPTY_SUPPORTED: 0,
+        getCodexRecoveryCommand: () => null,
+        getClaudeRecoveryCommand: processes => processes.some(process => process.command.endsWith('/claude')) ? 'claude --resume' : null,
+        findCodexSession: async () => null,
     }).TerminalTabComponent
 }
 
@@ -38,4 +41,26 @@ test('showing an already-started restored tab resizes it without restarting Code
     })
     instance.onFrontendReady()
     assert.equal(resizes, 1)
+})
+
+test('saving a local Claude pane records a safe resume picker for app restart', async () => {
+    const Component = component()
+    const instance = Object.assign(Object.create(Component.prototype), {
+        profile: { type: 'local', options: { command: '/bin/zsh', args: ['--login'], cwd: '/project' } },
+        session: {
+            getWorkingDirectory: async () => '/project',
+            getChildProcesses: async () => [{ pid: 42, command: '/usr/local/bin/claude' }],
+            getID: () => 'local-pty',
+        },
+        frontendIsReady: false,
+        savedState: { history: 'kept' },
+        logger: { warn: () => assert.fail('process inspection should succeed') },
+    })
+
+    const token = await instance.getRecoveryToken({ includeState: true })
+
+    assert.equal(token.recoveryCommand, 'claude --resume')
+    assert.equal(token.profile.options.cwd, '/project')
+    assert.deepEqual(token.savedState, { history: 'kept' })
+    assert.equal(token.profile.options.restoreFromPTYID, 'local-pty')
 })

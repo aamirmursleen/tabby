@@ -4,7 +4,7 @@ import { BaseTabProcess, WIN_BUILD_CONPTY_SUPPORTED, isWindowsBuild, GetRecovery
 import { BaseTerminalTabComponent } from 'tabby-terminal'
 import { LocalProfile, SessionOptions, UACService } from '../api'
 import { Session } from '../session'
-import { buildCodexRecoveryOptions, getCodexRecoveryCommand } from '../utils/codexRecovery'
+import { buildLocalRecoveryOptions, getClaudeRecoveryCommand, getCodexRecoveryCommand } from '../utils/codexRecovery'
 import { findCodexSession } from '../utils/codexSession'
 
 /** @hidden */
@@ -80,7 +80,7 @@ export class TerminalTabComponent extends BaseTerminalTabComponent<LocalProfile>
 
         const recoveryCommand = this.recoveryCommand
         this.recoveryCommand = null
-        const recoveryOptions = buildCodexRecoveryOptions(this.profile.options, recoveryCommand)
+        const recoveryOptions = buildLocalRecoveryOptions(this.profile.options, recoveryCommand)
         session.start({
             ...recoveryOptions ?? this.profile.options,
             width: columns,
@@ -99,11 +99,17 @@ export class TerminalTabComponent extends BaseTerminalTabComponent<LocalProfile>
         if (options?.includeState && this.session) {
             try {
                 const processes = await this.session.getChildProcesses()
-                recoveryCommand = getCodexRecoveryCommand(processes)
-                const codexSession = await findCodexSession(processes)
-                if (codexSession) {
-                    recoveryCommand = getCodexRecoveryCommand(processes, codexSession.id)
-                    cwd = codexSession.cwd
+                const codexCommand = getCodexRecoveryCommand(processes)
+                const claudeCommand = getClaudeRecoveryCommand(processes)
+                if (!codexCommand || !claudeCommand) {
+                    recoveryCommand = codexCommand ?? claudeCommand
+                    if (codexCommand) {
+                        const codexSession = await findCodexSession(processes)
+                        if (codexSession) {
+                            recoveryCommand = getCodexRecoveryCommand(processes, codexSession.id)
+                            cwd = codexSession.cwd
+                        }
+                    }
                 }
             } catch (error) {
                 this.logger.warn('Could not inspect terminal processes for recovery:', error)

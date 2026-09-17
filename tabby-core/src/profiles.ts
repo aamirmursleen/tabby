@@ -51,11 +51,11 @@ export class SplitLayoutProfilesService extends ProfileProvider<SplitLayoutProfi
         }
         const token = this.cloneLayoutToken(profile.options.recoveryToken)
         for (const pane of this.getPaneTokens(token)) {
-            // Keep credentials in the connection profile/Keychain rather than
-            // duplicating them in each saved layout.
+            // A saved layout keeps its pane geometry, while the current
+            // connection profile supplies all SSH settings and credentials.
             const current = this.config.store.profiles.find(x => x.id === pane.profile.id && x.type === pane.profile.type)
             if (current) {
-                pane.profile = configMerge(current, pane.profile)
+                pane.profile = configMerge({}, current)
             }
             // A reusable layout must start its own terminal, even if an old
             // connection profile contains a transient PTY recovery identifier.

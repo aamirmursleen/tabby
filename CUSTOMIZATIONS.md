@@ -6,6 +6,10 @@ The current custom app is installed as **Aamir Terminal.app**, with bundle ident
 
 Its profile is `~/Library/Application Support/Aamir Terminal`. On 2026-09-14, the saved config and local/session storage were copied from the existing `tabby` profile without changing the original. This is a snapshot of saved state, not a transfer of running terminal processes. Subsequent profile changes are independent.
 
+Version `1.0.236-aamir.13` restores SSH panes using the current saved server profile when one exists. This applies both to startup session recovery and to manually opened saved layouts, so later changes to a server's host, port, username or private key take effect without replacing the layout. A deleted profile still falls back to the connection snapshot in its saved tab. Local Claude panes now record a safe `claude --resume` picker for app restart when Claude is running at snapshot time; no previous permission-bypass flags are replayed. Existing snapshots that predate this version cannot identify a past Claude session retroactively.
+
+Verification: 180 regression tests, core/local/SSH TypeScript and lint, and bundled plugin builds. A saved layout and startup recovery tests cover current SSH profiles and the Claude resume command. A reachable SSH server and a user-entered key passphrase are still required for a restored connection to log in.
+
 Build the ARM64 app using the dedicated configuration (compile the app/plugins first):
 
 ```sh
