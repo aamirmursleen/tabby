@@ -36,7 +36,7 @@ function setup () {
         }
         static getFocusedWindow () { return windows.find(window => window.focused) }
         loadFile () {}
-        setTouchBar () {}
+        setTouchBar (value) { actions.push([this.id, 'touch-bar', value]) }
         setVibrancy () {}
         show () { actions.push([this.id, 'show']) }
         moveTop () { actions.push([this.id, 'move-top']) }
@@ -77,6 +77,12 @@ test('a second window changes only its own opacity, controls and drag settings',
     assert.deepEqual(actions, [[1, 'opacity', 0.8], [1, 'buttons', 12, 16]])
     assert.equal(first.instance.disableVibrancyWhileDragging, false)
     assert.equal(second.instance.disableVibrancyWhileDragging, true)
+})
+
+test('new macOS windows do not allocate the native Touch Bar control by default', () => {
+    const { create, actions } = setup()
+    create()
+    assert.equal(actions.some(([, action]) => action === 'touch-bar'), false)
 })
 
 test('closing a window removes its IPC and updater listeners, even before app readiness', () => {

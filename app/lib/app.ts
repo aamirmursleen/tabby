@@ -11,6 +11,7 @@ import { saveConfig } from './config'
 import { Window, WindowOptions } from './window'
 import { pluginManager } from './pluginManager'
 import { PTYManager } from './pty'
+import { configureChromiumPerformance } from './performance'
 
 /* eslint-disable block-scoped-var */
 
@@ -92,6 +93,7 @@ export class Application {
         app.commandLine.appendSwitch('disable-http-cache')
         app.commandLine.appendSwitch('max-active-webgl-contexts', '9000')
         app.commandLine.appendSwitch('lang', 'EN')
+        configureChromiumPerformance((name, value) => app.commandLine.appendSwitch(name, value))
 
         for (const flag of this.configStore.flags || [['force_discrete_gpu', '0']]) {
             app.commandLine.appendSwitch(flag[0], flag[1])

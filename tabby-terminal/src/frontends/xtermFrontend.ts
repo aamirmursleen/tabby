@@ -15,6 +15,7 @@ import { CanvasAddon } from '@xterm/addon-canvas'
 import { BaseTerminalProfile } from '../api/interfaces'
 import { getXtermBackgroundColor } from '../helpers'
 import { generatePalette } from '../generatePalette'
+import { terminalAllowsTransparency } from './renderingOptions'
 import './xterm.css'
 
 const COLOR_NAMES = [
@@ -121,7 +122,7 @@ export class XTermFrontend extends Frontend {
         this.themes = injector.get(ThemesService)
 
         this.xterm = new Terminal({
-            allowTransparency: true,
+            allowTransparency: terminalAllowsTransparency(this.configService.store),
             allowProposedApi: true,
             overviewRulerWidth: 8,
             windowsPty: process.platform === 'win32' ? {

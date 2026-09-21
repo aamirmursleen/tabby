@@ -154,13 +154,15 @@ export class Window {
         this.window.webContents.session.setSpellCheckerEnabled(false)
 
         if (process.platform === 'darwin') {
-            this.touchBarControl = new TouchBar.TouchBarSegmentedControl({
-                segments: [],
-                change: index => this.send('touchbar-selection', index),
-            })
-            this.window.setTouchBar(new TouchBar({
-                items: [this.touchBarControl],
-            }))
+            if (this.configStore.hacks?.enableTouchBar === true) {
+                this.touchBarControl = new TouchBar.TouchBarSegmentedControl({
+                    segments: [],
+                    change: index => this.send('touchbar-selection', index),
+                })
+                this.window.setTouchBar(new TouchBar({
+                    items: [this.touchBarControl],
+                }))
+            }
         } else {
             this.window.setMenu(null)
         }
@@ -436,6 +438,9 @@ export class Window {
         })
 
         this.on('window-set-touch-bar', (_, segments, selectedIndex) => {
+            if (!this.touchBarControl) {
+                return
+            }
             this.touchBarControl.segments = segments.map(s => ({
                 label: s.label,
                 icon: s.hasActivity ? activityIcon : undefined,

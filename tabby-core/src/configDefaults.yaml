@@ -57,6 +57,7 @@ profileBlacklist: []
 hacks:
   disableGPU: false
   disableVibrancyWhileDragging: false
+  enableTouchBar: false
   enableFluentBackground: false
   globalHotkey: null
 language: null
