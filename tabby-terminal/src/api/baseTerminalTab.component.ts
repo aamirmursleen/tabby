@@ -445,8 +445,12 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
         this.visibility$
             .pipe(debounce(visibility => interval(visibility ? 0 : INACTIVE_TAB_UNLOAD_DELAY)))
             .subscribe(visibility => {
-                if (visibility && this.frontend instanceof XTermFrontend) {
-                    this.frontend.reactivate()
+                if (this.frontend instanceof XTermFrontend) {
+                    if (visibility) {
+                        this.frontend.reactivate()
+                    } else {
+                        this.frontend.deactivate()
+                    }
                 }
             })
     }

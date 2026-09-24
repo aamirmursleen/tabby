@@ -106,6 +106,7 @@ export class XTermFrontend extends Frontend {
     private rendererRecoveryAttempts = 0
     private pendingFlushes = new Set<() => void>()
     private disposed = false
+    private renderingSuspended = false
 
     private configService: ConfigService
     private hotkeysService: HotkeysService
@@ -649,7 +650,7 @@ export class XTermFrontend extends Frontend {
         this.xterm.options.cursorStyle = {
             beam: 'bar',
         }[config.terminal.cursor] || config.terminal.cursor
-        this.xterm.options.cursorBlink = config.terminal.cursorBlink
+        this.xterm.options.cursorBlink = config.terminal.cursorBlink && !this.renderingSuspended
         this.xterm.options.macOptionIsMeta = config.terminal.altIsMeta
         this.xterm.options.scrollback = config.terminal.scrollbackLines
         this.xterm.options.wordSeparator = config.terminal.wordSeparator
@@ -753,6 +754,19 @@ export class XTermFrontend extends Frontend {
     }
 
     /**
+     * Stop visual work for an inactive tab without stopping its session or
+     * terminal buffer. Output continues to be parsed while the browser omits
+     * the hidden tab body from compositor layout.
+     */
+    deactivate (): void {
+        if (this.disposed || !this.opened || this.renderingSuspended) {
+            return
+        }
+        this.renderingSuspended = true
+        this.xterm.options.cursorBlink = false
+    }
+
+    /**
      * Redraw the terminal and recover the renderer when its tab is shown again.
      * Reactivating clears stale renderer state left behind while the tab was
      * hidden, and flushes any GPU context recovery deferred until now.
@@ -761,6 +775,8 @@ export class XTermFrontend extends Frontend {
         if (this.disposed || !this.opened) {
             return
         }
+        this.renderingSuspended = false
+        this.xterm.options.cursorBlink = this.configService.store.terminal.cursorBlink
         // An app- or window-level GPU reset can blank the canvas without firing
         // xterm's per-canvas contextlost event, so pendingRendererRecovery stays
         // unset. Treat a WebGL frontend that has lost its addon as needing
@@ -827,17 +843,19 @@ export class XTermFrontend extends Frontend {
     }
 
     private canRecoverRenderer (): boolean {
-        return !this.disposed && this.opened && !!this.element && this.element.offsetParent !== null
+        return !this.disposed && !this.renderingSuspended && this.opened && !!this.element && this.element.offsetParent !== null
     }
 
     private scheduleRendererRefresh (): void {
-        if (this.disposed || !this.opened || XTermFrontend.rendererRefreshPending) {
+        if (this.disposed || this.renderingSuspended || !this.opened || XTermFrontend.rendererRefreshPending) {
             return
         }
         XTermFrontend.rendererRefreshPending = true
         requestAnimationFrame(() => {
             XTermFrontend.rendererRefreshPending = false
-            const frontends = [...XTermFrontend.attachedFrontends]
+            const frontends = [...XTermFrontend.attachedFrontends].filter(frontend =>
+                !frontend.disposed && !frontend.renderingSuspended && frontend.opened,
+            )
             const clearedAtlases = new Set<HTMLCanvasElement>()
             // xterm 5.4 shares glyph atlases between panes, but clearing one
             // only invalidates the caller's vertex cache (xterm.js #6014).

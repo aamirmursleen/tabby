@@ -181,13 +181,15 @@ $tab-border-radius: 4px;
     > .content-tab {
         position: absolute;
         top: 0;
+        left: 0;
         width: 100%;
         height: 100%;
-
-        left: -1000%;
+        visibility: hidden;
+        pointer-events: none;
 
         &.content-tab-active {
-            left: 0;
+            visibility: visible;
+            pointer-events: auto;
         }
     }
 }

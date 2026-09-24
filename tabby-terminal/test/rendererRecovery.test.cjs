@@ -55,6 +55,7 @@ function harness () {
         let frontend
         const xterm = {
             rows: 24, cols: 80, buffer: { active: buffer },
+            options: { cursorBlink: true },
             open () {}, dispose () {},
             loadAddon (addon) {
                 if (addon instanceof WebglAddon) {
@@ -83,8 +84,12 @@ function harness () {
             } },
             enableWebGL: webgl, opened: false, disposed: false,
             pendingRendererRecovery: false, rendererRecoveryAttempts: 0,
-            pendingFlushes: new Set(), flowControl: { dispose () {} },
+            pendingFlushes: new Set(), flowControl: {
+                write (data) { state.text += data; return Promise.resolve() },
+                dispose () {},
+            },
             destroyed: new Subject(), ready: new AsyncSubject(),
+            configService: { store: { terminal: { cursorBlink: true } } },
             hostApp: { platform: 'macos' }, platformService: { displayMetricsChanged$: metrics },
             hotkeysService: { hotkey$: new Subject() },
             search: { onDidChangeResults () {} },
@@ -222,6 +227,40 @@ test('a failed WebGL recovery does not throw or exceed its retry budget', async 
         for (let i = 0; i < 8; i++) h.focus(true)
         h.flush()
         assert.ok(pane.frontend.rendererRecoveryAttempts <= 3)
+        assert.equal(pane.state.rendered, pane.state.text)
+    } finally { h.close() }
+})
+
+test('a hidden pane pauses cursor animation and is excluded from compositor refreshes', async () => {
+    const h = harness()
+    try {
+        const pane = await h.pane()
+        pane.frontend.deactivate()
+
+        assert.equal(pane.frontend.xterm.options.cursorBlink, false)
+        await pane.frontend.write(' + hidden output')
+        const refreshes = pane.state.refreshes
+        h.metrics.next()
+        h.flush()
+
+        assert.equal(pane.state.refreshes, refreshes)
+        assert.equal(pane.state.text, 'Pane 0: saved output ┌─┐ + hidden output')
+        assert.equal(pane.frontend.getSelection(), 'saved selection')
+    } finally { h.close() }
+})
+
+test('reactivating a hidden pane restores its cursor and redraws preserved output once', async () => {
+    const h = harness()
+    try {
+        const pane = await h.pane()
+        pane.frontend.deactivate()
+        const refreshes = pane.state.refreshes
+
+        pane.frontend.reactivate()
+        h.flush()
+
+        assert.equal(pane.frontend.xterm.options.cursorBlink, true)
+        assert.ok(pane.state.refreshes > refreshes)
         assert.equal(pane.state.rendered, pane.state.text)
     } finally { h.close() }
 })

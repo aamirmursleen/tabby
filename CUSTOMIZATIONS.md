@@ -6,6 +6,8 @@ The current custom app is installed as **Aamir Terminal.app**, with bundle ident
 
 Its profile is `~/Library/Application Support/Aamir Terminal`. On 2026-09-14, the saved config and local/session storage were copied from the existing `tabby` profile without changing the original. This is a snapshot of saved state, not a transfer of running terminal processes. Subsequent profile changes are independent.
 
+Version `1.0.236-aamir.18` removes inactive terminal tabs from Chromium's compositor layout, pauses their cursor animation after the existing inactivity delay, and excludes them from window-wide renderer refreshes. Shells and SSH sessions keep running and their output continues to enter the terminal buffer. Selecting a tab restores its configured cursor and performs one full redraw, avoiding the continuous compositor load that appeared with several long-running WebGL tabs.
+
 Version `1.0.236-aamir.17` configures Chromium with six requested raster worker threads for the terminal UI's multi-pane rendering and disables the native macOS Touch Bar control by default. Electron 38 currently caps the raster pool at four workers, so the setting uses the platform maximum; JavaScript still runs on Chromium's single UI event loop. The Touch Bar can be re-enabled with `hacks.enableTouchBar: true` if needed, though leaving it off avoids a macOS AppKit/SwiftUI rendering loop that can make the app lag.
 
 Version `1.0.236-aamir.16` adds **Refresh** to local Mac terminal panes. The local shell now has the same wrench toolbar pattern as SSH, plus a Refresh item in its right-click menu. Refresh restarts only that pane's shell, keeps its current working directory and split layout, and does not restore a stale PTY. If another command is running, the confirmation defaults to Cancel.
@@ -136,6 +138,8 @@ These flags allow Codex to run without sandboxing or approval prompts. The recov
 The old `tabby-tab-list` customization plugin is skipped in this fork: its searchable tab switcher and confirmations are already built in, and its old recovery patch must not launch Codex a second time. Its installed files are left untouched.
 
 ## First performance and reliability patch set
+
+Version `1.0.236-aamir.19` keeps inactive tab bodies measurable while hiding them from paint and pointer input. This allows xterm to complete its initial fit and emit its ready event during workspace restoration; using `display: none` could leave the active terminal permanently transparent after startup. Hidden panes still pause cursor animation after the inactivity delay and are excluded from renderer refresh work.
 
 - Local PTY output is acknowledged after the terminal parser consumes it, keeping fast producers from outrunning rendering. Exit is delivered after pending output, and exited PTYs are removed from the registry.
 - Concurrent macOS process scans share one short-lived native lookup. Process-tree traversal indexes parent relationships once.
