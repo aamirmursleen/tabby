@@ -53,7 +53,24 @@ function harness () {
         }
         const buffer = { viewportY: 7, baseY: 40, type: 'normal' }
         let frontend
-        const xterm = {
+        let xterm
+        const renderService = {
+            _isPaused: false,
+            _needsFullRefresh: false,
+            _pausedResizeTask: {
+                flush () { renderService._needsFullRefresh = false },
+            },
+            clear: () => { state.invalidated = true },
+            handleResize: () => xterm.refresh(),
+            refreshRows: () => {
+                if (renderService._isPaused) {
+                    renderService._needsFullRefresh = true
+                    return
+                }
+                xterm.refresh()
+            },
+        }
+        xterm = {
             rows: 24, cols: 80, buffer: { active: buffer },
             options: { cursorBlink: true },
             open () {}, dispose () {},
@@ -78,14 +95,15 @@ function harness () {
             getSelection: () => 'saved selection',
         }
         frontend = Object.assign(Object.create(XTermFrontend.prototype), {
-            xterm, xtermCore: { _renderService: {
-                clear: () => { state.invalidated = true },
-                handleResize: () => xterm.refresh(),
-            } },
+            xterm, xtermCore: { _renderService: renderService },
             enableWebGL: webgl, opened: false, disposed: false,
             pendingRendererRecovery: false, rendererRecoveryAttempts: 0,
             pendingFlushes: new Set(), flowControl: {
-                write (data) { state.text += data; return Promise.resolve() },
+                write (data) {
+                    state.text += data
+                    renderService.refreshRows()
+                    return Promise.resolve()
+                },
                 dispose () {},
             },
             destroyed: new Subject(), ready: new AsyncSubject(),
@@ -235,9 +253,13 @@ test('a hidden pane pauses cursor animation and is excluded from compositor refr
     const h = harness()
     try {
         const pane = await h.pane()
+        const oldWebGLAddon = pane.frontend.webGLAddon
         pane.frontend.deactivate()
 
         assert.equal(pane.frontend.xterm.options.cursorBlink, false)
+        assert.equal(pane.frontend.xtermCore._renderService._isPaused, true)
+        assert.equal(pane.frontend.webGLAddon, undefined)
+        assert.equal(oldWebGLAddon.disposed, true)
         await pane.frontend.write(' + hidden output')
         const refreshes = pane.state.refreshes
         h.metrics.next()
@@ -260,6 +282,8 @@ test('reactivating a hidden pane restores its cursor and redraws preserved outpu
         h.flush()
 
         assert.equal(pane.frontend.xterm.options.cursorBlink, true)
+        assert.equal(pane.frontend.xtermCore._renderService._isPaused, false)
+        assert.ok(pane.frontend.webGLAddon)
         assert.ok(pane.state.refreshes > refreshes)
         assert.equal(pane.state.rendered, pane.state.text)
     } finally { h.close() }

@@ -107,6 +107,7 @@ export class XTermFrontend extends Frontend {
     private pendingFlushes = new Set<() => void>()
     private disposed = false
     private renderingSuspended = false
+    private releasedWebGLForInactivity = false
 
     private configService: ConfigService
     private hotkeysService: HotkeysService
@@ -755,8 +756,8 @@ export class XTermFrontend extends Frontend {
 
     /**
      * Stop visual work for an inactive tab without stopping its session or
-     * terminal buffer. Output continues to be parsed while the browser omits
-     * the hidden tab body from compositor layout.
+     * terminal buffer. Output continues to be parsed while xterm defers its
+     * invisible redraws and the browser skips painting the hidden tab body.
      */
     deactivate (): void {
         if (this.disposed || !this.opened || this.renderingSuspended) {
@@ -764,6 +765,13 @@ export class XTermFrontend extends Frontend {
         }
         this.renderingSuspended = true
         this.xterm.options.cursorBlink = false
+        this.setRenderServicePaused(true)
+        if (this.webGLAddon) {
+            const addon = this.webGLAddon
+            this.webGLAddon = undefined
+            this.releasedWebGLForInactivity = true
+            addon.dispose()
+        }
     }
 
     /**
@@ -777,6 +785,11 @@ export class XTermFrontend extends Frontend {
         }
         this.renderingSuspended = false
         this.xterm.options.cursorBlink = this.configService.store.terminal.cursorBlink
+        if (this.releasedWebGLForInactivity) {
+            this.releasedWebGLForInactivity = false
+            this.attachWebGLAddon()
+        }
+        this.setRenderServicePaused(false)
         // An app- or window-level GPU reset can blank the canvas without firing
         // xterm's per-canvas contextlost event, so pendingRendererRecovery stays
         // unset. Treat a WebGL frontend that has lost its addon as needing
@@ -793,6 +806,23 @@ export class XTermFrontend extends Frontend {
             this.redraw()
         }
         this.scheduleRendererRefresh()
+    }
+
+    /**
+     * xterm already uses this pause state for terminals outside the viewport.
+     * Tab bodies overlap at the same coordinates, so explicitly mirror Tabby's
+     * visibility signal to avoid building render frames for covered panes.
+     */
+    private setRenderServicePaused (paused: boolean): void {
+        const renderService = this.xtermCore?._renderService
+        if (!renderService) {
+            return
+        }
+        renderService._isPaused = paused
+        if (!paused) {
+            renderService._pausedResizeTask?.flush()
+            renderService._needsFullRefresh = false
+        }
     }
 
     private attachWebGLAddon (): void {
