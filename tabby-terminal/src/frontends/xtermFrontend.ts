@@ -107,7 +107,6 @@ export class XTermFrontend extends Frontend {
     private pendingFlushes = new Set<() => void>()
     private disposed = false
     private renderingSuspended = false
-    private releasedWebGLForInactivity = false
 
     private configService: ConfigService
     private hotkeysService: HotkeysService
@@ -758,6 +757,8 @@ export class XTermFrontend extends Frontend {
      * Stop visual work for an inactive tab without stopping its session or
      * terminal buffer. Output continues to be parsed while xterm defers its
      * invisible redraws and the browser skips painting the hidden tab body.
+     * Keep the renderer allocated: split panes share a glyph atlas, so
+     * disposing and recreating one renderer can corrupt sibling vertex caches.
      */
     deactivate (): void {
         if (this.disposed || !this.opened || this.renderingSuspended) {
@@ -766,12 +767,6 @@ export class XTermFrontend extends Frontend {
         this.renderingSuspended = true
         this.xterm.options.cursorBlink = false
         this.setRenderServicePaused(true)
-        if (this.webGLAddon) {
-            const addon = this.webGLAddon
-            this.webGLAddon = undefined
-            this.releasedWebGLForInactivity = true
-            addon.dispose()
-        }
     }
 
     /**
@@ -785,10 +780,6 @@ export class XTermFrontend extends Frontend {
         }
         this.renderingSuspended = false
         this.xterm.options.cursorBlink = this.configService.store.terminal.cursorBlink
-        if (this.releasedWebGLForInactivity) {
-            this.releasedWebGLForInactivity = false
-            this.attachWebGLAddon()
-        }
         this.setRenderServicePaused(false)
         // An app- or window-level GPU reset can blank the canvas without firing
         // xterm's per-canvas contextlost event, so pendingRendererRecovery stays

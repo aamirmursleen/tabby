@@ -249,7 +249,7 @@ test('a failed WebGL recovery does not throw or exceed its retry budget', async 
     } finally { h.close() }
 })
 
-test('a hidden pane pauses cursor animation and is excluded from compositor refreshes', async () => {
+test('a hidden pane pauses rendering without replacing its WebGL renderer', async () => {
     const h = harness()
     try {
         const pane = await h.pane()
@@ -258,8 +258,8 @@ test('a hidden pane pauses cursor animation and is excluded from compositor refr
 
         assert.equal(pane.frontend.xterm.options.cursorBlink, false)
         assert.equal(pane.frontend.xtermCore._renderService._isPaused, true)
-        assert.equal(pane.frontend.webGLAddon, undefined)
-        assert.equal(oldWebGLAddon.disposed, true)
+        assert.equal(pane.frontend.webGLAddon, oldWebGLAddon)
+        assert.equal(oldWebGLAddon.disposed, false)
         await pane.frontend.write(' + hidden output')
         const refreshes = pane.state.refreshes
         h.metrics.next()
@@ -275,6 +275,7 @@ test('reactivating a hidden pane restores its cursor and redraws preserved outpu
     const h = harness()
     try {
         const pane = await h.pane()
+        const oldWebGLAddon = pane.frontend.webGLAddon
         pane.frontend.deactivate()
         const refreshes = pane.state.refreshes
 
@@ -283,7 +284,8 @@ test('reactivating a hidden pane restores its cursor and redraws preserved outpu
 
         assert.equal(pane.frontend.xterm.options.cursorBlink, true)
         assert.equal(pane.frontend.xtermCore._renderService._isPaused, false)
-        assert.ok(pane.frontend.webGLAddon)
+        assert.equal(pane.frontend.webGLAddon, oldWebGLAddon)
+        assert.equal(oldWebGLAddon.disposed, false)
         assert.ok(pane.state.refreshes > refreshes)
         assert.equal(pane.state.rendered, pane.state.text)
     } finally { h.close() }
