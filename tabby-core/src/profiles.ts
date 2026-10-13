@@ -68,6 +68,8 @@ export class SplitLayoutProfilesService extends ProfileProvider<SplitLayoutProfi
         if (!recovered) {
             throw new Error('The saved layout could not be opened.')
         }
+        recovered.inputs ??= {}
+        recovered.inputs.customTitle = profile.name.trim()
         return recovered as NewTabParameters<SplitTabComponent>
     }
 

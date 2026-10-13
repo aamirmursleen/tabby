@@ -16,6 +16,7 @@ import { BaseTabComponent } from './baseTab.component'
 import { SafeModeModalComponent } from './safeModeModal.component'
 import { TabBodyComponent } from './tabBody.component'
 import { SplitTabComponent } from './splitTab.component'
+import { getOpenTabLabel } from '../utils/openTabs'
 import { AppService, Command, CommandLocation, FileTransfer, HostWindowService, PlatformService } from '../api'
 
 function makeTabAnimation (dimension: string, size: number) {
@@ -55,11 +56,17 @@ function makeTabAnimation (dimension: string, size: number) {
 export function getTabStripWheelDelta (deltaX: number, deltaY: number, deltaMode: number, pageWidth: number): number {
     let delta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY
     if (deltaMode === 1) {
-        delta *= 24
+        delta *= 60
     } else if (deltaMode === 2) {
         delta *= pageWidth
+    } else {
+        delta *= 2.5
     }
     return delta
+}
+
+export function getTabStripPageStep (pageWidth: number): number {
+    return Math.max(600, Math.floor(pageWidth * 0.9))
 }
 
 export function getTabRevealDelays (animationsEnabled: boolean): number[] {
@@ -276,9 +283,13 @@ export class AppRootComponent {
             return
         }
         scroller.scrollBy({
-            left: direction * Math.max(240, Math.floor(scroller.clientWidth * 0.72)),
+            left: direction * getTabStripPageStep(scroller.clientWidth),
             behavior: 'smooth',
         })
+    }
+
+    getTabLabel (tab: BaseTabComponent, index: number): string {
+        return getOpenTabLabel(tab, index)
     }
 
     onTabsWheel (event: WheelEvent): void {

@@ -44,9 +44,17 @@ test('saves and reloads the exact nested layout, titles, folders and focused pan
     assert.equal(config.store.profiles[0].type, 'split-layout')
     assert.equal(service.getPaneCount(saved), 4)
     const prepared = await service.getNewTabParameters(saved)
-    assert.equal(prepared.inputs.customTitle, 'My work')
+    assert.equal(prepared.inputs.customTitle, 'Daily work')
     prepared.inputs._recoveredState.children[0].ratios[0] = 0.8
     assert.equal(saved.options.recoveryToken.children[0].ratios[0], 0.3, 'opening must not mutate the saved layout')
+})
+
+test('opening a renamed saved layout uses its current project name as the stable tab title', async () => {
+    const { service, tab } = setup()
+    const saved = await service.createProfile(tab, 'Old project')
+    await service.renameLayout(saved.id, 'Law project')
+    const prepared = await service.getNewTabParameters(service.savedLayouts[0])
+    assert.equal(prepared.inputs.customTitle, 'Law project')
 })
 
 test('saving a single terminal produces a reusable one-pane layout', async () => {

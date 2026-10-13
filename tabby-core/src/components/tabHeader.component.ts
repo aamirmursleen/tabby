@@ -12,7 +12,7 @@ import { ConfigService } from '../services/config.service'
 import { BaseComponent } from './base.component'
 import { MenuItemOptions } from '../api/menu'
 import { PlatformService } from '../api/platform'
-import { buildCloseTabConfirmation } from '../utils/openTabs'
+import { buildCloseTabConfirmation, getOpenTabLabel } from '../utils/openTabs'
 
 /** @hidden */
 @Component({
@@ -27,6 +27,10 @@ export class TabHeaderComponent extends BaseComponent {
     @Input() progress: number|null
     Platform = Platform
     closeConfirmationPending = false
+
+    get displayName (): string {
+        return getOpenTabLabel(this.tab, this.index)
+    }
 
     constructor (
         public app: AppService,

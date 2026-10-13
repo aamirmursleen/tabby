@@ -6,6 +6,8 @@ The current custom app is installed as **Aamir Terminal.app**, with bundle ident
 
 Its profile is `~/Library/Application Support/Aamir Terminal`. On 2026-09-14, the saved config and local/session storage were copied from the existing `tabby` profile without changing the original. This is a snapshot of saved state, not a transfer of running terminal processes. Subsequent profile changes are independent.
 
+Version `1.0.236-aamir.25` uses stable saved layout and connection profile names for horizontal tab labels instead of long, changing shell command titles. Opening a saved layout called **Law project**, including after renaming it, gives the new tab that exact persistent name. The tab strip keeps both navigation buttons on-screen, enlarges them, moves at least 600 pixels per click, scrolls 2.5 times faster with a mouse or trackpad, and includes a visible draggable scrollbar.
+
 Version `1.0.236-aamir.24` keeps horizontal tabs at their full name width instead of shrinking them to number-only boxes when many tabs are open. The tab strip scrolls horizontally with a trackpad or mouse wheel, includes visible left/right buttons, and automatically reveals a tab selected through a shortcut or menu. Vertical tab layouts keep their existing behavior.
 
 Version `1.0.236-aamir.23` adds a visible collapse control to the Sessions panel header and changes the toolbar server button into the matching expand/collapse control. Running session cards now show their current directory, shortening known home directories to paths such as `~/tabby`. SSH and tmux shells can report the directory through either Tabby's `CurrentDir` sequence or the standard OSC 7 sequence. Directory and foreground-process checks are shared and cached for five seconds to avoid adding terminal lag.
