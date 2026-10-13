@@ -96,6 +96,17 @@ export class OSCProcessor extends SessionMiddleware {
                 const cwd = param.substring('CurrentDir='.length)
                 this.cwdReported.next(cwd.startsWith('~') ? os.homedir() + cwd.substring(1) : cwd)
             }
+        } else if (code === '7') {
+            const match = /^file:\/\/[^/]*(\/.*)$/.exec(params.join(';'))
+            if (match) {
+                try {
+                    this.cwdReported.next(decodeURIComponent(match[1]))
+                } catch {
+                    output.push(sequence)
+                }
+            } else {
+                output.push(sequence)
+            }
         } else if (code === '52') {
             if ((params[0] === 'c' || params[0] === '') && params.length > 1 && params[1] !== '?') {
                 this.copyRequested.next(Buffer.from(params[1], 'base64').toString())

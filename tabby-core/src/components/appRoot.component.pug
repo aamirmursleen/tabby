@@ -82,8 +82,8 @@ title-bar(
 
             .btn-group.background
                 button.btn.btn-secondary.btn-tab-bar(
-                    ngbTooltip='Active sessions',
-                    aria-label='Active sessions',
+                    [ngbTooltip]="activeSessionsOpen ? 'Collapse active sessions' : 'Expand active sessions'",
+                    [attr.aria-label]="activeSessionsOpen ? 'Collapse active sessions' : 'Expand active sessions'",
                     [attr.aria-expanded]='activeSessionsOpen',
                     [class.active]='activeSessionsOpen',
                     (click)='toggleActiveSessions()'
@@ -157,7 +157,7 @@ title-bar(
                 [tab]='tab',
             )
 
-    active-sessions(*ngIf='ready && activeSessionsOpen')
+    active-sessions(*ngIf='ready && activeSessionsOpen', (closed)='setActiveSessionsOpen(false)')
 
     workspace-tools(*ngIf='ready', [hidden]='!workspaceToolsOpen', (closed)='workspaceToolsOpen = false')
     saved-layouts(*ngIf='ready', [hidden]='!savedLayoutsOpen', (closed)='savedLayoutsOpen = false')

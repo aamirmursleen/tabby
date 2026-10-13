@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit } from '@angular/core'
+import { Component, EventEmitter, OnDestroy, OnInit, Output } from '@angular/core'
 
 import { AppService } from '../services/app.service'
 import { ActiveSessionItem, buildActiveSessionItems } from '../utils/openTabs'
@@ -13,6 +13,7 @@ import { SplitTabComponent } from './splitTab.component'
     styleUrls: ['./activeSessions.component.scss'],
 })
 export class ActiveSessionsComponent extends BaseComponent implements OnInit, OnDestroy {
+    @Output() closed = new EventEmitter<void>()
     items: ActiveSessionItem<BaseTabComponent>[] = []
     private refreshTimer: number|null = null
     private refreshGeneration = 0
@@ -61,6 +62,10 @@ export class ActiveSessionsComponent extends BaseComponent implements OnInit, On
             case 'stopped': return 'Stopped'
             default: return 'Unknown'
         }
+    }
+
+    collapse (): void {
+        this.closed.emit()
     }
 
     itemAriaLabel (item: ActiveSessionItem<BaseTabComponent>): string {

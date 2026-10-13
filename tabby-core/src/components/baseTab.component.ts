@@ -18,6 +18,7 @@ export interface BaseTabSessionStatus {
     state: BaseTabSessionState
     detail: string
     process?: string
+    workingDirectory?: string
 }
 
 export interface GetRecoveryTokenOptions {

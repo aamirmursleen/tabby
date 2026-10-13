@@ -5,6 +5,38 @@ export interface TerminalSessionStatusInput {
     sessionOpen: boolean
     profile: Pick<Profile, 'type'|'name'|'options'>
     process?: string
+    workingDirectory?: string|null
+    homeDirectory?: string
+}
+
+export function formatSessionWorkingDirectory (input: TerminalSessionStatusInput): string|undefined {
+    const workingDirectory = input.workingDirectory?.trim()
+    if (!input.sessionOpen || !workingDirectory) {
+        return undefined
+    }
+
+    const homes: string[] = []
+    if (input.profile.type === 'local' && input.homeDirectory) {
+        homes.push(input.homeDirectory.replace(/\/$/, ''))
+    }
+    if (input.profile.type === 'ssh') {
+        const user = typeof input.profile.options?.user === 'string' ? input.profile.options.user.trim() : ''
+        if (user === 'root') {
+            homes.push('/root')
+        } else if (user) {
+            homes.push(`/home/${user}`, `/Users/${user}`)
+        }
+    }
+
+    for (const home of homes) {
+        if (workingDirectory === home) {
+            return '~'
+        }
+        if (workingDirectory.startsWith(`${home}/`)) {
+            return `~${workingDirectory.slice(home.length)}`
+        }
+    }
+    return workingDirectory
 }
 
 export function buildTerminalSessionStatus (input: TerminalSessionStatusInput): BaseTabSessionStatus {
@@ -26,6 +58,10 @@ export function buildTerminalSessionStatus (input: TerminalSessionStatusInput): 
     const process = input.process?.trim()
     if (input.sessionOpen && process) {
         status.process = process
+    }
+    const workingDirectory = formatSessionWorkingDirectory(input)
+    if (workingDirectory) {
+        status.workingDirectory = workingDirectory
     }
     return status
 }

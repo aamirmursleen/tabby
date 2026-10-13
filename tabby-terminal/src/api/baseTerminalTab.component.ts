@@ -18,6 +18,7 @@ import { buildTerminalSessionStatus } from './sessionStatus'
 
 
 const INACTIVE_TAB_UNLOAD_DELAY = 1000 * 30
+const SESSION_STATUS_DETAILS_REFRESH_INTERVAL = 5000
 const OSC_FOCUS_IN = Buffer.from('\x1b[I')
 const OSC_FOCUS_OUT = Buffer.from('\x1b[O')
 
@@ -191,21 +192,74 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
 
     get sessionChanged$ (): Observable<BaseSession|null> { return this.sessionChanged }
 
+    private sessionStatusDetailsSession: BaseSession|null = null
+    private sessionStatusDetailsUpdatedAt = 0
+    private sessionStatusDetailsPromise: Promise<void>|null = null
+    private sessionStatusProcess?: string
+    private sessionStatusWorkingDirectory?: string
+
     async getSessionStatus (): Promise<BaseTabSessionStatus> {
-        let process: string|undefined = undefined
-        if (this.session?.open) {
-            try {
-                process = (await this.getCurrentProcess())?.name
-            } catch (error) {
-                this.logger.warn('Could not inspect terminal process for session status:', error)
-            }
+        const session = this.session
+        if (session?.open) {
+            await this.refreshSessionStatusDetails(session)
+        } else {
+            this.resetSessionStatusDetails(null)
         }
         return buildTerminalSessionStatus({
             frontendReady: this.frontendIsReady,
-            sessionOpen: !!this.session?.open,
+            sessionOpen: !!session?.open,
             profile: this.profile,
-            process,
+            process: this.sessionStatusProcess,
+            workingDirectory: this.sessionStatusWorkingDirectory,
+            homeDirectory: process.env.HOME,
         })
+    }
+
+    private async refreshSessionStatusDetails (session: BaseSession): Promise<void> {
+        if (this.sessionStatusDetailsSession !== session) {
+            this.resetSessionStatusDetails(session)
+        }
+        if (this.sessionStatusDetailsPromise) {
+            return this.sessionStatusDetailsPromise
+        }
+        if (Date.now() - this.sessionStatusDetailsUpdatedAt < SESSION_STATUS_DETAILS_REFRESH_INTERVAL) {
+            return
+        }
+        this.sessionStatusDetailsUpdatedAt = Date.now()
+        const promise = (async () => {
+            const [processResult, workingDirectoryResult] = await Promise.allSettled([
+                this.getCurrentProcess(),
+                session.supportsWorkingDirectory() ? session.getWorkingDirectory() : Promise.resolve(null),
+            ])
+            if (this.session !== session || !session.open) {
+                return
+            }
+            if (processResult.status === 'fulfilled') {
+                this.sessionStatusProcess = processResult.value?.name
+            } else {
+                this.logger.debug('Could not inspect terminal process for session status:', processResult.reason)
+            }
+            if (workingDirectoryResult.status === 'fulfilled') {
+                this.sessionStatusWorkingDirectory = workingDirectoryResult.value ?? undefined
+            } else {
+                this.logger.debug('Could not inspect terminal directory for session status:', workingDirectoryResult.reason)
+            }
+        })()
+        this.sessionStatusDetailsPromise = promise
+        try {
+            await promise
+        } finally {
+            if (this.sessionStatusDetailsPromise === promise) {
+                this.sessionStatusDetailsPromise = null
+            }
+        }
+    }
+
+    private resetSessionStatusDetails (session: BaseSession|null): void {
+        this.sessionStatusDetailsSession = session
+        this.sessionStatusDetailsUpdatedAt = 0
+        this.sessionStatusProcess = undefined
+        this.sessionStatusWorkingDirectory = undefined
     }
 
     constructor (protected injector: Injector) {

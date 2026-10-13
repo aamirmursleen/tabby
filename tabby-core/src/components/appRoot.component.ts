@@ -264,8 +264,12 @@ export class AppRootComponent {
     }
 
     toggleActiveSessions (): void {
+        this.setActiveSessionsOpen(!this.activeSessionsOpen)
+    }
+
+    setActiveSessionsOpen (open: boolean): void {
         const previous = this.activeSessionsOpen
-        this.activeSessionsOpen = !previous
+        this.activeSessionsOpen = open
         this.config.store.showActiveSessions = this.activeSessionsOpen
         this.config.save().catch(error => {
             this.logger.warn('Could not save active sessions panel state:', error)

@@ -32,6 +32,14 @@ test('CWD recognition works at every possible chunk boundary including ESC and S
     }
 })
 
+test('standard OSC 7 working directories are recognized for SSH and tmux shells', () => {
+    const { processor, output, cwd } = setup()
+    processor.feedFromSession(Buffer.from('before\x1b]7;file://server/home/deploy/my%20app\x07after'))
+
+    assert.deepEqual(cwd, ['/home/deploy/my app'])
+    assert.equal(Buffer.concat(output).toString(), 'beforeafter')
+})
+
 test('ordinary output, CSI, and unsupported OSC pass through byte-for-byte', () => {
     const text = 'α\x1b[32mgreen\x1b[0m\x1b]0;title\x07done'
     const { processor, output } = setup()

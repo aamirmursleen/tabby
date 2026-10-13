@@ -1,8 +1,16 @@
 .active-sessions-shell([attr.aria-label]="'Active sessions'", role='region')
     .active-sessions-heading
         .heading-copy
-            span.heading-title Sessions
-            span.heading-count {{items.length}}
+            .heading-label
+                span.heading-title Sessions
+                span.heading-count {{items.length}}
+            button.collapse-button(
+                type='button',
+                ngbTooltip='Collapse active sessions',
+                aria-label='Collapse active sessions',
+                (click)='collapse()'
+            )
+                i.fas.fa-chevron-right(aria-hidden='true')
         span.heading-caption Live terminals
 
     .active-sessions-list(role='list')
@@ -26,6 +34,9 @@
                 span.session-process(*ngIf='item.status.process')
                     i.fas.fa-terminal(aria-hidden='true')
                     span {{item.status.process}}
+                span.session-directory(*ngIf='item.status.workingDirectory')
+                    i.fas.fa-folder-open(aria-hidden='true')
+                    span {{item.status.workingDirectory}}
             span.session-position {{item.tabIndex + 1}}{{item.paneIndex ? '.' + (item.paneIndex + 1) : ''}}
 
         .active-sessions-empty(*ngIf='items.length === 0')
