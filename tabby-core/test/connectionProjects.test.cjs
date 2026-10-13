@@ -123,3 +123,8 @@ test('the connection panel exposes project creation, search, priority and add-co
     assert.match(template, /setProjectPriority/)
     assert.match(template, /addConnection/)
 })
+
+test('priority sections retain their DOM controls through a complete mouse click', () => {
+    const template = fs.readFileSync(path.resolve(__dirname, '../src/components/activeSessions.component.pug'), 'utf8')
+    assert.match(template, /\*ngFor='let bucket of priorityBuckets; trackBy: trackByPriority'/)
+})

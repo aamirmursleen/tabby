@@ -33,7 +33,7 @@
     .connection-error(*ngIf='error') {{error}}
 
     .active-sessions-list
-        section.priority-section(*ngFor='let bucket of priorityBuckets')
+        section.priority-section(*ngFor='let bucket of priorityBuckets; trackBy: trackByPriority')
             .priority-heading([class]="'priority-heading priority-' + bucket.priority")
                 span.priority-line
                 span {{bucket.label}}

@@ -20,7 +20,7 @@ import {
     normalizeConnectionResumeContext,
 } from '../utils/connectionProjects'
 import { BaseComponent } from './base.component'
-import { BaseTabComponent, BaseTabSessionState } from './baseTab.component'
+import { BaseTabComponent, BaseTabSessionResumeContext, BaseTabSessionState } from './baseTab.component'
 import { SplitTabComponent } from './splitTab.component'
 
 interface PriorityBucket {
@@ -256,6 +256,7 @@ export class ActiveSessionsComponent extends BaseComponent implements OnInit, On
         await this.refreshItems()
     }
 
+    trackByPriority (_index: number, bucket: PriorityBucket): ConnectionPriority { return bucket.priority }
     trackByProject (_index: number, project: ConnectionProject<BaseTabComponent>): string { return project.id }
     trackByConnection (_index: number, item: ConnectionProjectItem<BaseTabComponent>): string { return item.key }
 
@@ -328,11 +329,24 @@ export class ActiveSessionsComponent extends BaseComponent implements OnInit, On
     private captureResumeContexts (items: ActiveSessionItem<BaseTabComponent>[]): boolean {
         const savedProfileIDs = new Set(this.config.store.profiles.map(profile => profile.id).filter(Boolean))
         const contexts = this.config.store.connectionResumeContexts ??= {}
-        let changed = false
+        const candidates = new Map<string, { context: BaseTabSessionResumeContext, active: boolean }>()
+
+        // Several live tabs can share one saved profile (especially "OS default").
+        // Pick a single context before mutating config so those tabs cannot overwrite
+        // one another and trigger a config.changed$ save loop. Prefer the active tab;
+        // otherwise the first tab is stable because AppService preserves tab order.
         for (const item of items) {
             const profileID = (item.tab as BaseTabComponent & { profile?: ConnectionProfileLike }).profile?.id
             const context = normalizeConnectionResumeContext(item.status.resumeContext)
             if (!profileID || !savedProfileIDs.has(profileID) || !context) { continue }
+            const candidate = candidates.get(profileID)
+            if (!candidate || item.active && !candidate.active) {
+                candidates.set(profileID, { context, active: item.active })
+            }
+        }
+
+        let changed = false
+        for (const [profileID, { context }] of candidates) {
             const previous = normalizeConnectionResumeContext(contexts[profileID])
             if (previous?.tmuxSession === context.tmuxSession && previous?.workingDirectory === context.workingDirectory) { continue }
             contexts[profileID] = context

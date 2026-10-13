@@ -167,6 +167,40 @@ test('live tmux context is persisted once for the saved connection', () => {
     })
 })
 
+test('multiple live tabs from one saved profile choose one stable resume context', () => {
+    const config = {
+        store: { profiles: [{ id: 'local-default' }], groups: [], connectionResumeContexts: {} },
+        changed$: null,
+    }
+    const component = new ActiveSessionsComponent(
+        { tabsChanged$: null, activeTabChange$: null }, config, {}, {}, {},
+    )
+    const items = [
+        {
+            active: false,
+            tab: { profile: { id: 'local-default' } },
+            status: { resumeContext: { workingDirectory: '/Users/test/first' } },
+        },
+        {
+            active: true,
+            tab: { profile: { id: 'local-default' } },
+            status: { resumeContext: { workingDirectory: '/Users/test/active' } },
+        },
+        {
+            active: false,
+            tab: { profile: { id: 'local-default' } },
+            status: { resumeContext: { workingDirectory: '/Users/test/last' } },
+        },
+    ]
+
+    assert.equal(component.captureResumeContexts(items), true)
+    assert.equal(component.captureResumeContexts(items), false)
+    assert.deepEqual(config.store.connectionResumeContexts['local-default'], {
+        tmuxSession: undefined,
+        workingDirectory: '/Users/test/active',
+    })
+})
+
 test('rendering an unchanged project priority does not write config again', async () => {
     const config = {
         store: { profiles: [], groups: [{ id: 'calendar', name: 'CalendarJet', priority: 1 }] },
