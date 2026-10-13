@@ -24,6 +24,35 @@ $tabs-height: 38px;
         width: auto;
     }
 
+    &.horizontal-scroll-tab {
+        flex: 0 0 auto !important;
+        width: auto !important;
+        min-width: max-content;
+
+        .name {
+            flex: none;
+            min-width: max-content;
+            overflow: visible;
+            text-overflow: clip;
+        }
+
+        .buttons {
+            position: static;
+            flex: none;
+            margin-left: 8px;
+            pointer-events: none;
+        }
+
+        &:hover .name:not(.no-hover) {
+            -webkit-mask-image: none;
+        }
+
+        &:hover .buttons,
+        &:focus-within .buttons {
+            pointer-events: auto;
+        }
+    }
+
     &.vertical {
       flex: none;
       height: $tabs-height;

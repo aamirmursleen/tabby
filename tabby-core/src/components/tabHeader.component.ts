@@ -119,6 +119,10 @@ export class TabHeaderComponent extends BaseComponent {
         return this.config.store.appearance.flexTabs
     }
 
+    @HostBinding('class.horizontal-scroll-tab') get isHorizontalScrollTab (): boolean {
+        return this.config.store.appearance.tabsLocation !== 'left' && this.config.store.appearance.tabsLocation !== 'right'
+    }
+
     @HostListener('dblclick', ['$event']) onDoubleClick ($event: MouseEvent): void {
         this.app.renameTab(this.tab)
         $event.stopPropagation()

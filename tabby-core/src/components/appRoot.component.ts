@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/explicit-module-boundary-types */
-import { Component, Input, HostListener, HostBinding, ViewChildren, ViewChild } from '@angular/core'
+import { Component, Input, HostListener, HostBinding, ViewChildren, ViewChild, ElementRef } from '@angular/core'
 import { trigger, style, animate, transition, state } from '@angular/animations'
 import { NgbDropdown, NgbModal } from '@ng-bootstrap/ng-bootstrap'
 import { CdkDragDrop } from '@angular/cdk/drag-drop'
@@ -52,6 +52,20 @@ function makeTabAnimation (dimension: string, size: number) {
     ]
 }
 
+export function getTabStripWheelDelta (deltaX: number, deltaY: number, deltaMode: number, pageWidth: number): number {
+    let delta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY
+    if (deltaMode === 1) {
+        delta *= 24
+    } else if (deltaMode === 2) {
+        delta *= pageWidth
+    }
+    return delta
+}
+
+export function getTabRevealDelays (animationsEnabled: boolean): number[] {
+    return animationsEnabled ? [0, 300] : [0]
+}
+
 /** @hidden */
 @Component({
     selector: 'app-root',
@@ -73,6 +87,7 @@ export class AppRootComponent {
     @ViewChildren(TabBodyComponent) tabBodies: TabBodyComponent[]
     @ViewChild('activeTransfersDropdown') activeTransfersDropdown: NgbDropdown
     @ViewChild('openTabsDropdown') openTabsDropdown: NgbDropdown
+    @ViewChild('tabsScroller') tabsScroller?: ElementRef<HTMLElement>
     unsortedTabs: BaseTabComponent[] = []
     updatesAvailable = false
     activeTransfers: FileTransfer[] = []
@@ -174,6 +189,13 @@ export class AppRootComponent {
             this.app.emitTabDragEnded()
         })
 
+        this.app.activeTabChange$.subscribe(() => {
+            const animationsEnabled = this.config.store?.accessibility?.animations !== false
+            for (const delay of getTabRevealDelays(animationsEnabled)) {
+                window.setTimeout(() => this.revealActiveTab(), delay)
+            }
+        })
+
         platform.fileTransferStarted$.subscribe(transfer => {
             this.activeTransfers.push(transfer)
             this.activeTransfersDropdown.open()
@@ -248,6 +270,29 @@ export class AppRootComponent {
         this.app.moveTabToIndex(tab, event.currentIndex)
     }
 
+    scrollTabs (direction: number): void {
+        const scroller = this.tabsScroller?.nativeElement
+        if (!scroller || this.hasVerticalTabs()) {
+            return
+        }
+        scroller.scrollBy({
+            left: direction * Math.max(240, Math.floor(scroller.clientWidth * 0.72)),
+            behavior: 'smooth',
+        })
+    }
+
+    onTabsWheel (event: WheelEvent): void {
+        const scroller = this.tabsScroller?.nativeElement
+        if (!scroller || this.hasVerticalTabs() || scroller.scrollWidth <= scroller.clientWidth) {
+            return
+        }
+        const delta = getTabStripWheelDelta(event.deltaX, event.deltaY, event.deltaMode, scroller.clientWidth)
+        if (delta) {
+            scroller.scrollLeft += delta
+            event.preventDefault()
+        }
+    }
+
     onTransfersChange () {
         if (this.activeTransfers.length === 0) {
             this.activeTransfersDropdown.close()
@@ -300,5 +345,10 @@ export class AppRootComponent {
                 && this.config.store.appearance.tabsLocation !== 'top'
                 && this.config.store.appearance.tabsLocation !== 'bottom'
         )
+    }
+
+    private revealActiveTab (): void {
+        const activeHeader = this.tabsScroller?.nativeElement.querySelector<HTMLElement>('tab-header.active')
+        activeHeader?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
     }
 }

@@ -30,10 +30,21 @@ title-bar(
             && config.store.appearance.frame == "thin" \
             && (config.store.appearance.tabsLocation == "top" || config.store.appearance.tabsLocation == "left") \
             && !config.store.showProfileTree')
+            button.btn.btn-secondary.btn-tab-bar.tab-scroll-button(
+                *ngIf='!hasVerticalTabs()',
+                ngbTooltip='Scroll tabs left',
+                aria-label='Scroll tabs left',
+                (click)='scrollTabs(-1); $event.stopPropagation()',
+                (dblclick)='$event.stopPropagation()'
+            )
+                i.fas.fa-chevron-left(aria-hidden='true')
             .tabs(
+                #tabsScroller,
                 cdkDropList,
+                [class.horizontal-tab-strip]='!hasVerticalTabs()',
                 [cdkDropListOrientation]='(config.store.appearance.tabsLocation == "top" || config.store.appearance.tabsLocation == "bottom") ? "horizontal" : "vertical"',
                 (cdkDropListDropped)='onTabsReordered($event)',
+                (wheel)='onTabsWheel($event)',
                 cdkAutoDropGroup='app-tabs'
             )
                 tab-header(
@@ -47,6 +58,15 @@ title-bar(
                     [class.fully-draggable]='hostApp.platform !== Platform.macOS',
                     [ngbTooltip]='tab.customTitle || tab.title'
                 )
+
+            button.btn.btn-secondary.btn-tab-bar.tab-scroll-button(
+                *ngIf='!hasVerticalTabs()',
+                ngbTooltip='Scroll tabs right',
+                aria-label='Scroll tabs right',
+                (click)='scrollTabs(1); $event.stopPropagation()',
+                (dblclick)='$event.stopPropagation()'
+            )
+                i.fas.fa-chevron-right(aria-hidden='true')
 
             .btn-group.background
                 .d-flex(
@@ -75,6 +95,7 @@ title-bar(
                     )
 
             .btn-space.background(
+                [class.horizontal-tab-spacer]='!hasVerticalTabs()',
                 [class.persistent]='config.store.appearance.frame == "thin"',
                 [class.drag]='config.store.appearance.frame == "thin" \
                 && ((config.store.appearance.tabsLocation !== "left" && config.store.appearance.tabsLocation !== "right") || hostApp.platform !== Platform.macOS)'
