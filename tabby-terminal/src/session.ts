@@ -1,5 +1,5 @@
 import { Observable, Subject } from 'rxjs'
-import { Logger } from 'tabby-core'
+import { BaseTabSessionResumeContext, Logger } from 'tabby-core'
 import { LoginScriptProcessor, LoginScriptsOptions } from './middleware/loginScriptProcessing'
 import { OSCProcessor } from './middleware/oscProcessing'
 import { SessionMiddlewareStack } from './api/middleware'
@@ -63,6 +63,12 @@ export abstract class BaseSession {
     async waitForOutputDrain (): Promise<void> {
         await this.initialOutputReady
         await this.outputDrainHandler?.()
+    }
+
+    async getSessionResumeContext (): Promise<BaseTabSessionResumeContext|null> {
+        if (!this.supportsWorkingDirectory()) { return null }
+        const workingDirectory = await this.getWorkingDirectory()
+        return workingDirectory ? { workingDirectory } : null
     }
 
     releaseInitialDataBuffer (): void {

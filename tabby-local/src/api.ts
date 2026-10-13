@@ -1,3 +1,4 @@
+import { BaseTabSessionResumeContext } from 'tabby-core'
 import { BaseTerminalProfile } from 'tabby-terminal'
 
 export type ShellType = 'unix' | 'powershell' | 'cmd'
@@ -46,6 +47,7 @@ export interface SessionOptions {
     shellType: ShellType | null
     pauseAfterExit: boolean
     runAsAdministrator: boolean
+    aamirResumeContext?: BaseTabSessionResumeContext|null
 }
 
 export interface LocalProfile extends BaseTerminalProfile {

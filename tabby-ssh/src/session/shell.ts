@@ -1,8 +1,8 @@
 import { Observable, Subject } from 'rxjs'
 import stripAnsi from 'strip-ansi'
 import { Injector } from '@angular/core'
-import { LogService } from 'tabby-core'
-import { BaseSession, UTF8SplitterMiddleware, InputProcessor } from 'tabby-terminal'
+import { BaseTabSessionResumeContext, LogService } from 'tabby-core'
+import { BaseSession, buildSessionResumeCommand, parseTmuxClientContexts, selectTmuxClientContext, UTF8SplitterMiddleware, InputProcessor } from 'tabby-terminal'
 import { SSHSession } from './ssh'
 import { SSHProfile } from '../api'
 import * as russh from 'russh'
@@ -13,6 +13,8 @@ export class SSHShellSession extends BaseSession {
     get serviceMessage$ (): Observable<string> { return this.serviceMessage }
     private serviceMessage = new Subject<string>()
     private ssh: SSHSession|null
+    private tmuxContext: BaseTabSessionResumeContext|null = null
+    private tmuxContextUpdatedAt = 0
 
     constructor (
         injector: Injector,
@@ -21,7 +23,13 @@ export class SSHShellSession extends BaseSession {
     ) {
         super(injector.get(LogService).create(`ssh-shell-${profile.options.host}-${profile.options.port}`))
         this.ssh = ssh
-        this.setLoginScriptsOptions(this.profile.options)
+        const resumeCommand = buildSessionResumeCommand(this.profile.options.aamirResumeContext)
+        this.setLoginScriptsOptions({
+            ...this.profile.options,
+            scripts: resumeCommand
+                ? [{ expect: '', send: resumeCommand }, ...this.profile.options.scripts]
+                : this.profile.options.scripts,
+        })
         this.ssh.serviceMessage$.subscribe(m => this.serviceMessage.next(m))
         this.middleware.push(new UTF8SplitterMiddleware())
         this.middleware.push(new InputProcessor(profile.options.input))
@@ -112,5 +120,26 @@ export class SSHShellSession extends BaseSession {
 
     async getWorkingDirectory (): Promise<string|null> {
         return this.reportedCWD ?? null
+    }
+
+    async getSessionResumeContext (): Promise<BaseTabSessionResumeContext|null> {
+        const workingDirectory = await this.getWorkingDirectory()
+        if (!workingDirectory) { return null }
+        if (Date.now() - this.tmuxContextUpdatedAt >= 15000) {
+            this.tmuxContextUpdatedAt = Date.now()
+            try {
+                const output = await this.ssh?.queryTmuxClients() ?? ''
+                const matchingDirectory = parseTmuxClientContexts(output)
+                    .filter(context => context.workingDirectory === workingDirectory)
+                this.tmuxContext = selectTmuxClientContext(
+                    matchingDirectory,
+                    new Set(),
+                    workingDirectory,
+                )
+            } catch {
+                this.tmuxContext = null
+            }
+        }
+        return this.tmuxContext ?? { workingDirectory }
     }
 }

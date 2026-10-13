@@ -1,45 +1,134 @@
-.active-sessions-shell([attr.aria-label]="'Active sessions'", role='region')
+.active-sessions-shell([attr.aria-label]="'Project connections'", role='region')
     .active-sessions-heading
         .heading-copy
             .heading-label
-                span.heading-title Sessions
-                span.heading-count {{items.length}}
-            button.collapse-button(
-                type='button',
-                ngbTooltip='Collapse active sessions',
-                aria-label='Collapse active sessions',
-                (click)='collapse()'
+                span.heading-title Connections
+                span.heading-count {{liveConnectionCount}} / {{connectionCount}}
+            .heading-actions
+                button.heading-button(
+                    type='button',
+                    ngbTooltip='Add project',
+                    aria-label='Add project',
+                    (click)='addProject()'
+                )
+                    i.fas.fa-folder-plus(aria-hidden='true')
+                button.heading-button(
+                    type='button',
+                    ngbTooltip='Collapse connections',
+                    aria-label='Collapse active sessions',
+                    (click)='collapse()'
+                )
+                    i.fas.fa-chevron-right(aria-hidden='true')
+        span.heading-caption Saved and live · grouped by priority
+
+        .connection-search
+            i.fas.fa-search(aria-hidden='true')
+            input(
+                type='search',
+                [(ngModel)]='query',
+                placeholder='Search projects and connections',
+                aria-label='Search projects and connections'
             )
-                i.fas.fa-chevron-right(aria-hidden='true')
-        span.heading-caption Live terminals
 
-    .active-sessions-list(role='list')
-        button.active-session-item(
-            *ngFor='let item of items; trackBy: trackByTab',
-            type='button',
-            role='listitem',
-            [class.active]='item.active',
-            [attr.aria-label]='itemAriaLabel(item)',
-            [title]='item.label',
-            (click)='select(item)'
-        )
-            span.session-accent([style.background-color]='item.color || null')
-            span.session-copy
-                span.session-name {{item.label}}
-                span.session-detail
-                    span.status-dot([class]="'status-dot ' + item.status.state", aria-hidden='true')
-                    span.status-label {{statusLabel(item.status.state)}}
-                    span.detail-separator(aria-hidden='true') ·
-                    span.detail-text {{item.status.detail}}
-                span.session-process(*ngIf='item.status.process')
-                    i.fas.fa-terminal(aria-hidden='true')
-                    span {{item.status.process}}
-                span.session-directory(*ngIf='item.status.workingDirectory')
-                    i.fas.fa-folder-open(aria-hidden='true')
-                    span {{item.status.workingDirectory}}
-            span.session-position {{item.tabIndex + 1}}{{item.paneIndex ? '.' + (item.paneIndex + 1) : ''}}
+    .connection-error(*ngIf='error') {{error}}
 
-        .active-sessions-empty(*ngIf='items.length === 0')
-            i.fas.fa-terminal(aria-hidden='true')
-            strong No terminal sessions
-            span Open a local or SSH terminal to see it here.
+    .active-sessions-list
+        section.priority-section(*ngFor='let bucket of priorityBuckets')
+            .priority-heading([class]="'priority-heading priority-' + bucket.priority")
+                span.priority-line
+                span {{bucket.label}}
+                span.priority-project-count {{bucket.projects.length}}
+
+            article.project-card(*ngFor='let project of bucket.projects; trackBy: trackByProject')
+                .project-header
+                    button.project-toggle(
+                        type='button',
+                        [attr.aria-expanded]='!isProjectCollapsed(project)',
+                        [attr.aria-label]='(isProjectCollapsed(project) ? "Expand " : "Collapse ") + project.name',
+                        (click)='toggleProject(project)'
+                    )
+                        i.fas([class.fa-chevron-right]='isProjectCollapsed(project)', [class.fa-chevron-down]='!isProjectCollapsed(project)', aria-hidden='true')
+                    span.project-icon([style.color]='project.color || null')
+                        i([class]='project.icon || "far fa-folder"', aria-hidden='true')
+                    button.project-name(type='button', (click)='toggleProject(project)', [title]='project.name') {{project.name}}
+                    span.project-live-count([class.has-live]='project.liveCount > 0') {{project.liveCount}}/{{project.connections.length}}
+                    select.project-priority(
+                        [value]='project.priority',
+                        (change)='setProjectPriority(project, $any($event.target).value)',
+                        [disabled]='project.id === "ungrouped"',
+                        [attr.aria-label]='"Priority for " + project.name',
+                        title='Project priority'
+                    )
+                        option(value='1') P1
+                        option(value='2') P2
+                        option(value='3') P3
+                        option(value='4') P4
+                    button.project-action(
+                        *ngIf='project.id !== "ungrouped"',
+                        type='button',
+                        [attr.aria-label]='"Add connection to " + project.name',
+                        title='Add connection',
+                        (click)='addConnection(project, $event)'
+                    )
+                        i.fas.fa-plus(aria-hidden='true')
+                    button.project-action(
+                        *ngIf='project.id !== "ungrouped"',
+                        type='button',
+                        [attr.aria-label]='"Edit " + project.name',
+                        title='Edit project',
+                        (click)='editProject(project, $event)'
+                    )
+                        i.fas.fa-pen(aria-hidden='true')
+
+                .project-connections(*ngIf='!isProjectCollapsed(project)')
+                    .connection-row(
+                        *ngFor='let item of project.connections; trackBy: trackByConnection',
+                        [class.active]='item.active'
+                    )
+                        button.connection-main(
+                            type='button',
+                            [disabled]='busyKey === item.key',
+                            [attr.aria-label]='itemAriaLabel(item)',
+                            [title]='item.label',
+                            (click)='activate(item)'
+                        )
+                            span.session-accent([style.background-color]='item.color || project.color || null')
+                            span.connection-copy
+                                span.session-name {{item.label}}
+                                span.session-detail
+                                    span.status-dot([class]="'status-dot ' + item.status.state", aria-hidden='true')
+                                    span.status-label {{busyKey === item.key ? 'Opening…' : statusLabel(item.status.state)}}
+                                    span.detail-separator(aria-hidden='true') ·
+                                    span.detail-text {{item.status.detail}}
+                                span.session-process(*ngIf='item.status.process')
+                                    i.fas.fa-terminal(aria-hidden='true')
+                                    span {{item.status.process}}
+                                span.session-tmux(*ngIf='item.status.tmuxSession')
+                                    i.fas.fa-layer-group(aria-hidden='true')
+                                    span tmux · {{item.status.tmuxSession}}
+                                span.session-directory(*ngIf='item.status.workingDirectory')
+                                    i.fas.fa-folder-open(aria-hidden='true')
+                                    span {{item.status.workingDirectory}}
+                            span.session-position(*ngIf='item.position') {{item.position}}
+                            i.connection-open-icon.fas([class.fa-arrow-right]='item.liveItem', [class.fa-play]='!item.liveItem', aria-hidden='true')
+                        button.connection-edit(
+                            *ngIf='item.profile?.id',
+                            type='button',
+                            [attr.aria-label]='"Edit connection " + item.label',
+                            title='Edit connection',
+                            (click)='editConnection(item, $event)'
+                        )
+                            i.fas.fa-pen(aria-hidden='true')
+
+                    button.empty-project(
+                        *ngIf='project.connections.length === 0',
+                        type='button',
+                        (click)='addConnection(project)'
+                    )
+                        i.fas.fa-plus(aria-hidden='true')
+                        span Add first connection
+
+        .active-sessions-empty(*ngIf='priorityBuckets.length === 0')
+            i.fas.fa-search(aria-hidden='true')
+            strong No matching connections
+            span Try another project or connection name.

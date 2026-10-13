@@ -1,7 +1,7 @@
 import { marker as _ } from '@biesbjerg/ngx-translate-extract-marker'
 import { Component, Input, Injector, Inject, Optional } from '@angular/core'
 import { BaseTabProcess, WIN_BUILD_CONPTY_SUPPORTED, isWindowsBuild, GetRecoveryTokenOptions } from 'tabby-core'
-import { BaseTerminalTabComponent } from 'tabby-terminal'
+import { BaseTerminalTabComponent, buildShellTmuxResumeOptions } from 'tabby-terminal'
 import { LocalProfile, SessionOptions, UACService } from '../api'
 import { Session } from '../session'
 import { buildLocalRecoveryOptions, getClaudeRecoveryCommand, getCodexRecoveryCommand } from '../utils/codexRecovery'
@@ -76,15 +76,16 @@ export class TerminalTabComponent extends BaseTerminalTabComponent<LocalProfile>
         if (this.profile.options.runAsAdministrator && this.uac?.isAvailable) {
             this.profile = {
                 ...this.profile,
-                options: this.uac.patchSessionOptionsForUAC(this.profile.options),
+                options: this.uac.patchSessionOptionsForUAC(this.profile.options) as typeof this.profile.options,
             }
         }
 
         const recoveryCommand = this.recoveryCommand
         this.recoveryCommand = null
         const recoveryOptions = buildLocalRecoveryOptions(this.profile.options, recoveryCommand)
+        const tmuxResumeOptions = buildShellTmuxResumeOptions(this.profile.options, this.profile.options.aamirResumeContext)
         const options = {
-            ...recoveryOptions ?? this.profile.options,
+            ...recoveryOptions ?? tmuxResumeOptions ?? this.profile.options,
             width: columns,
             height: rows,
         }

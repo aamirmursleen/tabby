@@ -64,6 +64,8 @@ language: null
 defaultQuickConnectProvider: "ssh"
 showProfileTree: false
 showActiveSessions: true
+connectionProjectsSeeded: false
+connectionResumeContexts: {}
 
 workspaceNotes: []
 workspaceSnippetGroups: []

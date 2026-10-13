@@ -1,4 +1,5 @@
 import { ConnectableTerminalProfile, InputProcessingOptions, LoginScriptsOptions } from 'tabby-terminal'
+import { BaseTabSessionResumeContext } from 'tabby-core'
 
 export enum SSHAlgorithmType {
     HMAC = 'hmac',
@@ -37,6 +38,7 @@ export interface SSHProfileOptions extends LoginScriptsOptions {
     httpProxyPort: number | null
     reuseSession: boolean
     input: InputProcessingOptions,
+    aamirResumeContext?: BaseTabSessionResumeContext|null
 }
 
 export enum PortForwardType {

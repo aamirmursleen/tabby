@@ -3,7 +3,7 @@ import { Spinner } from 'cli-spinner'
 import colors from 'ansi-colors'
 import { NgZone, OnInit, OnDestroy, Injector, ViewChild, HostBinding, Input, ElementRef, InjectFlags, Component } from '@angular/core'
 import { trigger, transition, style, animate, AnimationTriggerMetadata } from '@angular/animations'
-import { AppService, ConfigService, BaseTabComponent, BaseTabSessionStatus, HostAppService, HotkeysService, NotificationsService, Platform, LogService, Logger, TabContextMenuItemProvider, SplitTabComponent, SubscriptionContainer, MenuItemOptions, PlatformService, HostWindowService, ResettableTimeout, TranslateService, ThemesService, FullyDefined } from 'tabby-core'
+import { AppService, ConfigService, BaseTabComponent, BaseTabSessionResumeContext, BaseTabSessionStatus, HostAppService, HotkeysService, NotificationsService, Platform, LogService, Logger, TabContextMenuItemProvider, SplitTabComponent, SubscriptionContainer, MenuItemOptions, PlatformService, HostWindowService, ResettableTimeout, TranslateService, ThemesService, FullyDefined } from 'tabby-core'
 
 import { BaseSession } from '../session'
 
@@ -197,6 +197,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
     private sessionStatusDetailsPromise: Promise<void>|null = null
     private sessionStatusProcess?: string
     private sessionStatusWorkingDirectory?: string
+    private sessionStatusResumeContext?: BaseTabSessionResumeContext
 
     async getSessionStatus (): Promise<BaseTabSessionStatus> {
         const session = this.session
@@ -211,6 +212,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
             profile: this.profile,
             process: this.sessionStatusProcess,
             workingDirectory: this.sessionStatusWorkingDirectory,
+            resumeContext: this.sessionStatusResumeContext,
             homeDirectory: process.env.HOME,
         })
     }
@@ -227,9 +229,9 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
         }
         this.sessionStatusDetailsUpdatedAt = Date.now()
         const promise = (async () => {
-            const [processResult, workingDirectoryResult] = await Promise.allSettled([
+            const [processResult, contextResult] = await Promise.allSettled([
                 this.getCurrentProcess(),
-                session.supportsWorkingDirectory() ? session.getWorkingDirectory() : Promise.resolve(null),
+                session.getSessionResumeContext(),
             ])
             if (this.session !== session || !session.open) {
                 return
@@ -239,10 +241,11 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
             } else {
                 this.logger.debug('Could not inspect terminal process for session status:', processResult.reason)
             }
-            if (workingDirectoryResult.status === 'fulfilled') {
-                this.sessionStatusWorkingDirectory = workingDirectoryResult.value ?? undefined
+            if (contextResult.status === 'fulfilled') {
+                this.sessionStatusResumeContext = contextResult.value ?? undefined
+                this.sessionStatusWorkingDirectory = contextResult.value?.workingDirectory
             } else {
-                this.logger.debug('Could not inspect terminal directory for session status:', workingDirectoryResult.reason)
+                this.logger.debug('Could not inspect terminal context for session status:', contextResult.reason)
             }
         })()
         this.sessionStatusDetailsPromise = promise
@@ -260,6 +263,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
         this.sessionStatusDetailsUpdatedAt = 0
         this.sessionStatusProcess = undefined
         this.sessionStatusWorkingDirectory = undefined
+        this.sessionStatusResumeContext = undefined
     }
 
     constructor (protected injector: Injector) {

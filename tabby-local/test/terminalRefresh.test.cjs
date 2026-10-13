@@ -9,6 +9,7 @@ function component (globals = {}) {
         require: () => '',
         _: text => text,
         UACService: class {}, BaseTerminalTabComponent: class {},
+        buildShellTmuxResumeOptions: () => null,
         ...globals,
     }).TerminalTabComponent
 }

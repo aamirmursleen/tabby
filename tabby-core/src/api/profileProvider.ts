@@ -39,6 +39,7 @@ export type PartialProfile<T extends Profile> = Omit<Omit<Omit<{
 export interface ProfileGroup {
     id: string
     parentGroupId?: string
+    priority?: 1|2|3|4
     icon?: string
     color?: string
     name: string

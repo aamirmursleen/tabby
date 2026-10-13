@@ -879,6 +879,55 @@ export class SSHSession {
         return ch
     }
 
+    async queryTmuxClients (): Promise<string> {
+        if (!(this.ssh instanceof russh.AuthenticatedSSHClient)) {
+            throw new Error('Cannot inspect tmux before SSH authentication')
+        }
+        const channel = await this.ssh.activateChannel(await this.ssh.openSessionChannel())
+        const chunks: Buffer[] = []
+        return new Promise<string>((resolve, reject) => {
+            let settled = false
+            let byteLength = 0
+            let timer: ReturnType<typeof setTimeout>|null = null
+            const subscriptions: { unsubscribe: () => void }[] = []
+
+            function cleanup (): void {
+                if (timer) { clearTimeout(timer) }
+                subscriptions.forEach(subscription => subscription.unsubscribe())
+            }
+            function finish (): void {
+                if (settled) { return }
+                settled = true
+                cleanup()
+                channel.close().catch(() => undefined)
+                resolve(Buffer.concat(chunks).toString('utf8'))
+            }
+            function finishError (error: unknown): void {
+                if (settled) { return }
+                settled = true
+                cleanup()
+                channel.close().catch(() => undefined)
+                reject(error)
+            }
+
+            subscriptions.push(
+                channel.data$.subscribe({
+                    next: data => {
+                        byteLength += data.length
+                        if (byteLength <= 64 * 1024) { chunks.push(Buffer.from(data)) }
+                    },
+                    error: finishError,
+                }),
+                channel.eof$.subscribe(() => finish()),
+                channel.closed$.subscribe(() => finish()),
+            )
+            timer = setTimeout(() => finishError(new Error('Timed out while inspecting tmux')), 2000)
+
+            channel.requestExec('LC_ALL=C tmux list-clients -F \'#{client_pid}\\t#{client_activity}\\t#{session_name}\\t#{pane_current_path}\' 2>/dev/null')
+                .catch(finishError)
+        })
+    }
+
     private setupSocketChannelEvents (channel: russh.Channel, socket: Socket, logPrefix: string): void {
         // Channel → Socket data flow with error handling
         channel.data$.subscribe({

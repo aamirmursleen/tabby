@@ -1,4 +1,4 @@
-import { BaseTabSessionStatus, Profile } from 'tabby-core'
+import { BaseTabSessionResumeContext, BaseTabSessionStatus, Profile } from 'tabby-core'
 
 export interface TerminalSessionStatusInput {
     frontendReady: boolean
@@ -6,6 +6,7 @@ export interface TerminalSessionStatusInput {
     profile: Pick<Profile, 'type'|'name'|'options'>
     process?: string
     workingDirectory?: string|null
+    resumeContext?: BaseTabSessionResumeContext|null
     homeDirectory?: string
 }
 
@@ -54,6 +55,10 @@ export function buildTerminalSessionStatus (input: TerminalSessionStatusInput): 
     const status: BaseTabSessionStatus = {
         state: input.sessionOpen ? 'running' : input.frontendReady ? 'stopped' : 'starting',
         detail,
+    }
+    if (input.sessionOpen && input.resumeContext) {
+        status.resumeContext = input.resumeContext
+        status.tmuxSession = input.resumeContext.tmuxSession
     }
     const process = input.process?.trim()
     if (input.sessionOpen && process) {

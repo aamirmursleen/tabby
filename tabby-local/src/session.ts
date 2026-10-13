@@ -1,8 +1,9 @@
 import * as fs from 'mz/fs'
 import * as fsSync from 'fs'
+import { execFile } from 'mz/child_process'
 import { Injector } from '@angular/core'
-import { HostAppService, ConfigService, WIN_BUILD_CONPTY_SUPPORTED, isWindowsBuild, Platform, BootstrapData, BOOTSTRAP_DATA, LogService } from 'tabby-core'
-import { BaseSession } from 'tabby-terminal'
+import { BaseTabSessionResumeContext, HostAppService, ConfigService, WIN_BUILD_CONPTY_SUPPORTED, isWindowsBuild, Platform, BootstrapData, BOOTSTRAP_DATA, LogService } from 'tabby-core'
+import { BaseSession, parseTmuxClientContexts, selectTmuxClientContext } from 'tabby-terminal'
 import { SessionOptions, ChildProcess, PTYInterface, PTYProxy } from './api'
 import { getEnvironment, substituteEnv } from './environment'
 import { OutputAcknowledgements } from './utils/outputAcknowledgements'
@@ -182,6 +183,30 @@ export class Session extends BaseSession {
 
     async getChildProcesses (): Promise<ChildProcess[]> {
         return this.pty?.getChildProcesses() ?? []
+    }
+
+    async getSessionResumeContext (): Promise<BaseTabSessionResumeContext|null> {
+        const workingDirectory = await this.getWorkingDirectory()
+        const processes = await this.getChildProcesses()
+        const tmuxClients = processes.filter(child => {
+            const command = child.command.trim().replace(/\\/g, '/').split('/').pop()?.toLocaleLowerCase() ?? ''
+            return command === 'tmux' || command.startsWith('tmux:')
+        })
+        if (!tmuxClients.length) {
+            return workingDirectory ? { workingDirectory } : null
+        }
+        try {
+            const [stdout] = await execFile('tmux', [
+                'list-clients', '-F', '#{client_pid}\t#{client_activity}\t#{session_name}\t#{pane_current_path}',
+            ], { timeout: 1500, maxBuffer: 64 * 1024 })
+            return selectTmuxClientContext(
+                parseTmuxClientContexts(stdout),
+                new Set(tmuxClients.map(client => client.pid)),
+                workingDirectory,
+            ) ?? (workingDirectory ? { workingDirectory } : null)
+        } catch {
+            return workingDirectory ? { workingDirectory } : null
+        }
     }
 
     async gracefullyKillProcess (): Promise<void> {

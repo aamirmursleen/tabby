@@ -15,6 +15,7 @@ test('an open tmux terminal remains visibly running', () => {
         profile: { type: 'local', name: 'Mac shell', options: {} },
         process: 'tmux',
         workingDirectory: '/Users/aamir/tabby',
+        resumeContext: { tmuxSession: 'tabby-dev', workingDirectory: '/Users/aamir/tabby' },
         homeDirectory: '/Users/aamir',
     })
     assert.deepEqual(JSON.parse(JSON.stringify(status)), {
@@ -22,6 +23,8 @@ test('an open tmux terminal remains visibly running', () => {
         detail: 'Local',
         process: 'tmux',
         workingDirectory: '~/tabby',
+        tmuxSession: 'tabby-dev',
+        resumeContext: { tmuxSession: 'tabby-dev', workingDirectory: '/Users/aamir/tabby' },
     })
 })
 

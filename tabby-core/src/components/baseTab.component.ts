@@ -14,11 +14,18 @@ export interface BaseTabProcess {
 
 export type BaseTabSessionState = 'running'|'starting'|'stopped'|'unknown'
 
+export interface BaseTabSessionResumeContext {
+    tmuxSession?: string
+    workingDirectory?: string
+}
+
 export interface BaseTabSessionStatus {
     state: BaseTabSessionState
     detail: string
     process?: string
     workingDirectory?: string
+    tmuxSession?: string
+    resumeContext?: BaseTabSessionResumeContext
 }
 
 export interface GetRecoveryTokenOptions {

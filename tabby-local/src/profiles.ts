@@ -25,6 +25,7 @@ export class LocalProfilesService extends ProfileProvider<LocalProfile> {
             shellType: null,
             pauseAfterExit: false,
             runAsAdministrator: false,
+            aamirResumeContext: null,
         },
     }
 
