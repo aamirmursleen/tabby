@@ -79,6 +79,7 @@ export class AppRootComponent {
     workspaceToolsOpen = false
     savedLayoutsOpen = false
     openTabsMenuOpen = false
+    activeSessionsOpen = true
     private logger: Logger
 
     constructor (
@@ -179,6 +180,7 @@ export class AppRootComponent {
         })
 
         config.ready$.toPromise().then(async () => {
+            this.activeSessionsOpen = this.config.store.showActiveSessions !== false
             this.leftToolbarButtons = await this.getToolbarButtons(false)
             this.rightToolbarButtons = await this.getToolbarButtons(true)
 
@@ -259,6 +261,17 @@ export class AppRootComponent {
     onOpenTabSelected (tab: BaseTabComponent): void {
         this.openTabsDropdown.close()
         this.app.selectTab(tab)
+    }
+
+    toggleActiveSessions (): void {
+        const previous = this.activeSessionsOpen
+        this.activeSessionsOpen = !previous
+        this.config.store.showActiveSessions = this.activeSessionsOpen
+        this.config.save().catch(error => {
+            this.logger.warn('Could not save active sessions panel state:', error)
+            this.activeSessionsOpen = previous
+            this.config.store.showActiveSessions = previous
+        })
     }
 
     @HostBinding('class.vibrant') get isVibrant () {

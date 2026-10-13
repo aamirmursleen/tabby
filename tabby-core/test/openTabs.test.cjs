@@ -22,6 +22,7 @@ sourceModule.paths = Module._nodeModulePaths(path.dirname(sourcePath))
 sourceModule._compile(compiled.outputText, sourcePath)
 
 const {
+    buildActiveSessionItems,
     buildCloseTabConfirmation,
     buildOpenTabItems,
     filterOpenTabItems,
@@ -100,6 +101,56 @@ test('filters case-insensitively and requires every search term', () => {
     )
     assert.equal(filterOpenTabItems(items, 'missing').length, 0)
     assert.strictEqual(filterOpenTabItems(items, '   '), items)
+})
+
+test('builds one live session item for every terminal pane across open tabs', async () => {
+    const local = {
+        customTitle: 'Build agent',
+        profile: { name: 'Mac', type: 'local' },
+        hasFocus: false,
+        getSessionStatus: async () => ({ state: 'running', detail: 'Local', process: 'tmux' }),
+    }
+    const ssh = {
+        profile: { name: 'Production', type: 'ssh' },
+        hasFocus: true,
+        getSessionStatus: async () => ({ state: 'running', detail: 'SSH · root@example.com', process: 'tmux' }),
+    }
+    const nonTerminal = { title: 'Settings', getSessionStatus: async () => null }
+    const split = { getAllTabs: () => [local, ssh, nonTerminal] }
+    const stopped = {
+        profile: { name: 'Old server', type: 'ssh' },
+        getSessionStatus: async () => ({ state: 'stopped', detail: 'SSH · root@old.example.com' }),
+    }
+
+    const items = await buildActiveSessionItems([split, stopped], split)
+
+    assert.equal(items.length, 3)
+    assert.deepEqual(items.map(item => ({
+        tab: item.tab,
+        topLevelTab: item.topLevelTab,
+        label: item.label,
+        tabIndex: item.tabIndex,
+        paneIndex: item.paneIndex,
+        active: item.active,
+        state: item.status.state,
+        process: item.status.process,
+    })), [
+        { tab: local, topLevelTab: split, label: 'Build agent', tabIndex: 0, paneIndex: 0, active: false, state: 'running', process: 'tmux' },
+        { tab: ssh, topLevelTab: split, label: 'Production', tabIndex: 0, paneIndex: 1, active: true, state: 'running', process: 'tmux' },
+        { tab: stopped, topLevelTab: stopped, label: 'Old server', tabIndex: 1, paneIndex: 0, active: false, state: 'stopped', process: undefined },
+    ])
+})
+
+test('keeps the session list usable when one status probe fails', async () => {
+    const broken = {
+        title: 'Unreachable',
+        getSessionStatus: async () => { throw new Error('process probe failed') },
+    }
+
+    const [item] = await buildActiveSessionItems([broken], null)
+
+    assert.equal(item.label, 'Unreachable')
+    assert.deepEqual(item.status, { state: 'unknown', detail: 'Status unavailable' })
 })
 
 test('makes Cancel the default and escape action in the close confirmation', () => {

@@ -63,6 +63,7 @@ hacks:
 language: null
 defaultQuickConnectProvider: "ssh"
 showProfileTree: false
+showActiveSessions: true
 
 workspaceNotes: []
 workspaceSnippetGroups: []

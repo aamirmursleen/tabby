@@ -6,6 +6,8 @@ The current custom app is installed as **Aamir Terminal.app**, with bundle ident
 
 Its profile is `~/Library/Application Support/Aamir Terminal`. On 2026-09-14, the saved config and local/session storage were copied from the existing `tabby` profile without changing the original. This is a snapshot of saved state, not a transfer of running terminal processes. Subsequent profile changes are independent.
 
+Version `1.0.236-aamir.22` adds a persistent **Sessions** panel on the right. It lists every local and SSH pane across all open tabs, including panes inside split layouts, and shows **Running**, **Starting**, or **Stopped** from the live terminal-session lifecycle. A local foreground process such as `tmux` is shown separately; tmux-backed local and SSH terminals remain marked Running while their connection is alive. Clicking a row opens its top-level tab and focuses that exact pane. The server toolbar button hides or restores the panel, and the choice is saved.
+
 Version `1.0.236-aamir.21` fixes intermittent missing, fragmented, or incorrectly colored terminal glyphs after returning to an inactive tab. Hidden terminals still pause xterm redraws and cursor animation after 30 seconds, but retain their WebGL renderer so split panes cannot invalidate one another's shared glyph atlas while the tab is hidden or reactivated.
 
 Version `1.0.236-aamir.20` puts terminals hidden for 30 seconds into a deep visual idle state. xterm continues parsing their shell or SSH output into the terminal buffer, but stops scheduling invisible render frames and releases the hidden pane's WebGL renderer. Selecting the tab recreates WebGL, applies any deferred resize, and performs a full redraw. Recently used tabs keep their renderer for fast switching.

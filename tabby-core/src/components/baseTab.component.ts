@@ -12,6 +12,14 @@ export interface BaseTabProcess {
     name: string
 }
 
+export type BaseTabSessionState = 'running'|'starting'|'stopped'|'unknown'
+
+export interface BaseTabSessionStatus {
+    state: BaseTabSessionState
+    detail: string
+    process?: string
+}
+
 export interface GetRecoveryTokenOptions {
     includeState: boolean
 }
@@ -187,6 +195,14 @@ export abstract class BaseTabComponent extends BaseComponent {
      * Override this to enable task completion notifications for the tab
      */
     async getCurrentProcess (): Promise<BaseTabProcess|null> {
+        return null
+    }
+
+    /**
+     * Returns live connection state for terminal-like tabs. Other tab types
+     * return null and are omitted from the active sessions panel.
+     */
+    async getSessionStatus (): Promise<BaseTabSessionStatus|null> {
         return null
     }
 

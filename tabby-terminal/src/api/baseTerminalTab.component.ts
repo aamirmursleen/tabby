@@ -3,7 +3,7 @@ import { Spinner } from 'cli-spinner'
 import colors from 'ansi-colors'
 import { NgZone, OnInit, OnDestroy, Injector, ViewChild, HostBinding, Input, ElementRef, InjectFlags, Component } from '@angular/core'
 import { trigger, transition, style, animate, AnimationTriggerMetadata } from '@angular/animations'
-import { AppService, ConfigService, BaseTabComponent, HostAppService, HotkeysService, NotificationsService, Platform, LogService, Logger, TabContextMenuItemProvider, SplitTabComponent, SubscriptionContainer, MenuItemOptions, PlatformService, HostWindowService, ResettableTimeout, TranslateService, ThemesService, FullyDefined } from 'tabby-core'
+import { AppService, ConfigService, BaseTabComponent, BaseTabSessionStatus, HostAppService, HotkeysService, NotificationsService, Platform, LogService, Logger, TabContextMenuItemProvider, SplitTabComponent, SubscriptionContainer, MenuItemOptions, PlatformService, HostWindowService, ResettableTimeout, TranslateService, ThemesService, FullyDefined } from 'tabby-core'
 
 import { BaseSession } from '../session'
 
@@ -14,6 +14,7 @@ import { TerminalDecorator } from './decorator'
 import { SearchPanelComponent } from '../components/searchPanel.component'
 import { MultifocusService } from '../services/multifocus.service'
 import { getTerminalBackgroundColor } from '../helpers'
+import { buildTerminalSessionStatus } from './sessionStatus'
 
 
 const INACTIVE_TAB_UNLOAD_DELAY = 1000 * 30
@@ -189,6 +190,23 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
     get frontendReady$ (): Observable<void> { return this.frontendReady }
 
     get sessionChanged$ (): Observable<BaseSession|null> { return this.sessionChanged }
+
+    async getSessionStatus (): Promise<BaseTabSessionStatus> {
+        let process: string|undefined = undefined
+        if (this.session?.open) {
+            try {
+                process = (await this.getCurrentProcess())?.name
+            } catch (error) {
+                this.logger.warn('Could not inspect terminal process for session status:', error)
+            }
+        }
+        return buildTerminalSessionStatus({
+            frontendReady: this.frontendIsReady,
+            sessionOpen: !!this.session?.open,
+            profile: this.profile,
+            process,
+        })
+    }
 
     constructor (protected injector: Injector) {
         super(injector)

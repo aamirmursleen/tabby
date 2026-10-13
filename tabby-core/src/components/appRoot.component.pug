@@ -82,6 +82,14 @@ title-bar(
 
             .btn-group.background
                 button.btn.btn-secondary.btn-tab-bar(
+                    ngbTooltip='Active sessions',
+                    aria-label='Active sessions',
+                    [attr.aria-expanded]='activeSessionsOpen',
+                    [class.active]='activeSessionsOpen',
+                    (click)='toggleActiveSessions()'
+                )
+                    i.fas.fa-server
+                button.btn.btn-secondary.btn-tab-bar(
                     ngbTooltip='Snippets',
                     aria-label='Snippets',
                     [attr.aria-expanded]='workspaceToolsOpen',
@@ -148,6 +156,8 @@ title-bar(
                 [active]='tab == app.activeTab',
                 [tab]='tab',
             )
+
+    active-sessions(*ngIf='ready && activeSessionsOpen')
 
     workspace-tools(*ngIf='ready', [hidden]='!workspaceToolsOpen', (closed)='workspaceToolsOpen = false')
     saved-layouts(*ngIf='ready', [hidden]='!savedLayoutsOpen', (closed)='savedLayoutsOpen = false')

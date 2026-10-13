@@ -1,3 +1,5 @@
+import type { BaseTabSessionStatus } from '../components/baseTab.component'
+
 export interface OpenTabLike {
     customTitle?: string|null
     title?: string|null
@@ -6,6 +8,8 @@ export interface OpenTabLike {
         name?: string|null
     }|null
     getAllTabs?: () => OpenTabLike[]
+    getSessionStatus?: () => Promise<BaseTabSessionStatus|null>
+    hasFocus?: boolean
 }
 
 export interface OpenTabItem<T extends OpenTabLike = OpenTabLike> {
@@ -14,6 +18,17 @@ export interface OpenTabItem<T extends OpenTabLike = OpenTabLike> {
     label: string
     color: string|null
     active: boolean
+}
+
+export interface ActiveSessionItem<T extends OpenTabLike = OpenTabLike> {
+    tab: T
+    topLevelTab: T
+    tabIndex: number
+    paneIndex: number
+    label: string
+    color: string|null
+    active: boolean
+    status: BaseTabSessionStatus
 }
 
 export interface CloseTabConfirmationText {
@@ -73,6 +88,50 @@ export function filterOpenTabItems<T extends OpenTabLike> (items: OpenTabItem<T>
         const label = item.label.toLocaleLowerCase()
         return terms.every(term => label.includes(term))
     })
+}
+
+export async function buildActiveSessionItems<T extends OpenTabLike> (
+    tabs: readonly T[],
+    activeTab: T|null,
+): Promise<ActiveSessionItem<T>[]> {
+    const candidates: Omit<ActiveSessionItem<T>, 'status'>[] = []
+    tabs.forEach((topLevelTab, tabIndex) => {
+        const panes = topLevelTab.getAllTabs?.() as T[]|undefined
+        const sessionTabs = panes?.length ? panes : [topLevelTab]
+        sessionTabs.forEach((tab, paneIndex) => {
+            if (!tab.getSessionStatus) {
+                return
+            }
+            candidates.push({
+                tab,
+                topLevelTab,
+                tabIndex,
+                paneIndex,
+                label: getOpenTabLabel(tab, paneIndex),
+                color: cleanLabel(tab.color) || null,
+                active: topLevelTab === activeTab && (sessionTabs.length === 1 || !!tab.hasFocus),
+            })
+        })
+    })
+
+    const resolved = await Promise.all(candidates.map(async item => {
+        try {
+            const status = await item.tab.getSessionStatus!()
+            if (!status) {
+                return null
+            }
+            return {
+                ...item,
+                status,
+            }
+        } catch {
+            return {
+                ...item,
+                status: { state: 'unknown', detail: 'Status unavailable' } as BaseTabSessionStatus,
+            }
+        }
+    }))
+    return resolved.filter((item): item is ActiveSessionItem<T> => item !== null)
 }
 
 export function buildCloseTabConfirmation (

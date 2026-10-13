@@ -1,0 +1,34 @@
+.active-sessions-shell([attr.aria-label]="'Active sessions'", role='region')
+    .active-sessions-heading
+        .heading-copy
+            span.heading-title Sessions
+            span.heading-count {{items.length}}
+        span.heading-caption Live terminals
+
+    .active-sessions-list(role='list')
+        button.active-session-item(
+            *ngFor='let item of items; trackBy: trackByTab',
+            type='button',
+            role='listitem',
+            [class.active]='item.active',
+            [attr.aria-label]='itemAriaLabel(item)',
+            [title]='item.label',
+            (click)='select(item)'
+        )
+            span.session-accent([style.background-color]='item.color || null')
+            span.session-copy
+                span.session-name {{item.label}}
+                span.session-detail
+                    span.status-dot([class]="'status-dot ' + item.status.state", aria-hidden='true')
+                    span.status-label {{statusLabel(item.status.state)}}
+                    span.detail-separator(aria-hidden='true') ·
+                    span.detail-text {{item.status.detail}}
+                span.session-process(*ngIf='item.status.process')
+                    i.fas.fa-terminal(aria-hidden='true')
+                    span {{item.status.process}}
+            span.session-position {{item.tabIndex + 1}}{{item.paneIndex ? '.' + (item.paneIndex + 1) : ''}}
+
+        .active-sessions-empty(*ngIf='items.length === 0')
+            i.fas.fa-terminal(aria-hidden='true')
+            strong No terminal sessions
+            span Open a local or SSH terminal to see it here.

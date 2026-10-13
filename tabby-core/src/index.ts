@@ -34,6 +34,7 @@ import { UnlockVaultModalComponent } from './components/unlockVaultModal.compone
 import { WelcomeTabComponent } from './components/welcomeTab.component'
 import { TransfersMenuComponent } from './components/transfersMenu.component'
 import { OpenTabsMenuComponent } from './components/openTabsMenu.component'
+import { ActiveSessionsComponent } from './components/activeSessions.component'
 import { ProfileIconComponent } from './components/profileIcon.component'
 import { ProfileTreeComponent } from './components/profileTree.component'
 
@@ -137,6 +138,7 @@ const PROVIDERS = [
         WelcomeTabComponent,
         TransfersMenuComponent,
         OpenTabsMenuComponent,
+        ActiveSessionsComponent,
         DropZoneDirective,
         CdkAutoDropGroup,
         ProfileIconComponent,
