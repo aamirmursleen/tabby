@@ -73,6 +73,24 @@
     overscroll-behavior: contain;
 }
 
+.open-tabs-section {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 26px;
+    padding: 8px 12px 3px;
+    color: var(--theme-fg-more);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+
+    i {
+        color: #f4c95d;
+        font-size: 9px;
+    }
+}
+
 .open-tabs-item {
     display: grid;
     grid-template-columns: 26px 12px minmax(0, 1fr) 20px;
@@ -123,6 +141,12 @@
 
 .open-tabs-check {
     font-size: 16px;
+    text-align: center;
+}
+
+.open-tabs-frequent {
+    color: #f4c95d;
+    font-size: 10px;
     text-align: center;
 }
 

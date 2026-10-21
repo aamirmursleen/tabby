@@ -5,6 +5,8 @@ export interface OpenTabLike {
     title?: string|null
     color?: string|null
     profile?: {
+        id?: string|null
+        type?: string|null
         name?: string|null
     }|null
     getAllTabs?: () => OpenTabLike[]
@@ -18,6 +20,17 @@ export interface OpenTabItem<T extends OpenTabLike = OpenTabLike> {
     label: string
     color: string|null
     active: boolean
+}
+
+export interface OpenTabUsageEntry {
+    score: number
+    updatedAt: number
+    lastUsedAt: number
+}
+
+export interface RankedOpenTabItem<T extends OpenTabLike = OpenTabLike> extends OpenTabItem<T> {
+    usageScore: number
+    usageLastUsedAt: number
 }
 
 export interface ActiveSessionItem<T extends OpenTabLike = OpenTabLike> {
@@ -39,6 +52,15 @@ export interface CloseTabConfirmationText {
 
 function cleanLabel (value: unknown): string {
     return typeof value === 'string' ? value.trim() : ''
+}
+
+function getProfileUsageKey (tab: OpenTabLike): string {
+    const profileID = cleanLabel(tab.profile?.id)
+    if (profileID) {
+        return `${cleanLabel(tab.profile?.type) || 'profile'}:${profileID}`
+    }
+    const profileName = cleanLabel(tab.profile?.name)
+    return profileName ? `name:${profileName.toLocaleLowerCase()}` : ''
 }
 
 export function getOpenTabLabel (tab: OpenTabLike, index: number): string {
@@ -65,6 +87,37 @@ export function getOpenTabLabel (tab: OpenTabLike, index: number): string {
     return cleanLabel(tab.title) || `Tab ${index + 1}`
 }
 
+export function getOpenTabUsageKey (tab: OpenTabLike, index: number): string {
+    let profileTabs: OpenTabLike[] = [tab]
+    if (tab.getAllTabs) {
+        const nestedTabs = tab.getAllTabs()
+        if (nestedTabs.length) {
+            profileTabs = nestedTabs
+        }
+    }
+
+    const profileKeys = profileTabs
+        .map(getProfileUsageKey)
+        .filter((key, keyIndex, keys) => key && keys.indexOf(key) === keyIndex)
+    if (profileKeys.length) {
+        return `profiles:${profileKeys.join('|')}`
+    }
+
+    return `title:${getOpenTabLabel(tab, index).toLocaleLowerCase()}`
+}
+
+export function getDecayedOpenTabUsageScore (
+    entry: OpenTabUsageEntry,
+    now: number,
+    halfLifeMs = 1000 * 60 * 60 * 24 * 30,
+): number {
+    if (!Number.isFinite(entry.score) || entry.score <= 0) {
+        return 0
+    }
+    const age = Math.max(0, now - entry.updatedAt)
+    return entry.score * Math.pow(0.5, age / halfLifeMs)
+}
+
 export function buildOpenTabItems<T extends OpenTabLike> (tabs: readonly T[], activeTab: T|null): OpenTabItem<T>[] {
     return tabs.map((tab, index) => ({
         tab,
@@ -75,7 +128,26 @@ export function buildOpenTabItems<T extends OpenTabLike> (tabs: readonly T[], ac
     }))
 }
 
-export function filterOpenTabItems<T extends OpenTabLike> (items: OpenTabItem<T>[], query: string): OpenTabItem<T>[] {
+export function rankOpenTabItemsByUsage<T extends OpenTabLike> (
+    items: readonly OpenTabItem<T>[],
+    usage: Readonly<Record<string, OpenTabUsageEntry|undefined>>,
+    now: number,
+): RankedOpenTabItem<T>[] {
+    return items
+        .map(item => {
+            const entry = usage[getOpenTabUsageKey(item.tab, item.index)]
+            return {
+                ...item,
+                usageScore: entry ? getDecayedOpenTabUsageScore(entry, now) : 0,
+                usageLastUsedAt: entry?.lastUsedAt ?? 0,
+            }
+        })
+        .sort((a, b) => b.usageScore - a.usageScore
+            || b.usageLastUsedAt - a.usageLastUsedAt
+            || a.index - b.index)
+}
+
+export function filterOpenTabItems<T extends OpenTabLike, I extends OpenTabItem<T>> (items: I[], query: string): I[] {
     const terms = query
         .trim()
         .toLocaleLowerCase()

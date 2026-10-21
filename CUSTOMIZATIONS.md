@@ -6,6 +6,10 @@ The current custom app is installed as **Aamir Terminal.app**, with bundle ident
 
 Its profile is `~/Library/Application Support/Aamir Terminal`. On 2026-09-14, the saved config and local/session storage were copied from the existing `tabby` profile without changing the original. This is a snapshot of saved state, not a transfer of running terminal processes. Subsequent profile changes are independent.
 
+Version `1.0.236-aamir.28` ranks the **Open tabs** menu by a rolling local usage score. Selecting a tab adds one use and the time spent active adds gradually to its score; old activity decays over 30 days so the list adapts. The five highest-scoring open tabs appear in a **Most used** section while their original tab numbers remain visible. Search keeps the same ranking. The physical tab strip does not move while the user works.
+
+Usage tracking performs no per-keystroke work and has no polling loop. It updates only when the active tab changes, when the Open tabs menu opens, and at shutdown. Small writes are delayed and coalesced for one second, and history is capped at 128 local entries. Existing recent-profile history seeds the first ranking after upgrade.
+
 Version `1.0.236-aamir.27` fixes two rebuild loops in the Connections navigator. Priority sections now retain the same DOM controls through mouse press and release, allowing project collapse and connection clicks to complete. When several open tabs share one saved profile, such as **OS default**, resume tracking chooses one stable directory/tmux context per saved profile, preferring its active tab, and writes the config only when that final context changes. This also stops the repeated config saves and high renderer CPU use.
 
 Version `1.0.236-aamir.26` turns the Sessions sidebar into a saved and live connection navigator. Every custom local, SSH, serial or Telnet profile remains visible while offline and opens directly from its row. Existing profile groups become project folders, so a project can contain any number of connections; projects and connections can be added or edited from the panel. Search covers project names, connection names, details and folders.

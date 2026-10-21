@@ -22,23 +22,33 @@
         )
 
     #open-tabs-list.open-tabs-list(#tabList, role='listbox')
-        button.open-tabs-item(
-            *ngFor='let item of filteredItems; trackBy: trackByTab; let itemIndex = index',
-            type='button',
-            role='option',
-            tabindex='-1',
-            [id]='getItemID(item)',
-            [title]='item.label',
-            [class.active]='item.active',
-            [class.highlighted]='itemIndex === highlightedIndex',
-            [attr.aria-selected]='item.active',
-            (mouseenter)='highlightedIndex = itemIndex',
-            (click)='selectItem(item)'
-        )
-            span.open-tabs-index {{item.index + 1}}
-            span.open-tabs-dot([style.background-color]='item.color || null')
-            span.open-tabs-name {{item.label}}
-            span.open-tabs-check(*ngIf='item.active', aria-hidden='true') ✓
+        ng-container(*ngFor='let item of filteredItems; trackBy: trackByTab; let itemIndex = index')
+            .open-tabs-section(*ngIf='!query && mostUsedCount > 0 && itemIndex === 0')
+                i.fas.fa-star(aria-hidden='true')
+                span(translate) Most used
+            .open-tabs-section(*ngIf='!query && mostUsedCount > 0 && mostUsedCount < filteredItems.length && itemIndex === mostUsedCount')
+                span(translate) Other tabs
+            button.open-tabs-item(
+                type='button',
+                role='option',
+                tabindex='-1',
+                [id]='getItemID(item)',
+                [title]='item.label',
+                [class.active]='item.active',
+                [class.highlighted]='itemIndex === highlightedIndex',
+                [attr.aria-selected]='item.active',
+                (mouseenter)='highlightedIndex = itemIndex',
+                (click)='selectItem(item)'
+            )
+                span.open-tabs-index {{item.index + 1}}
+                span.open-tabs-dot([style.background-color]='item.color || null')
+                span.open-tabs-name {{item.label}}
+                span.open-tabs-check(*ngIf='item.active', aria-hidden='true') ✓
+                i.open-tabs-frequent.fas.fa-star(
+                    *ngIf='isMostUsed(itemIndex) && !item.active',
+                    aria-hidden='true',
+                    ngbTooltip='Frequently used'
+                )
 
         .open-tabs-empty(*ngIf='filteredItems.length === 0')
             span(*ngIf='items.length === 0', translate) No open tabs

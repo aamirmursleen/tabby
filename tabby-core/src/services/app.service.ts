@@ -17,6 +17,7 @@ import { ConfigService } from './config.service'
 import { TabRecoveryService } from './tabRecovery.service'
 import { TabsService, NewTabParameters } from './tabs.service'
 import { SelectorService } from './selector.service'
+import { OpenTabUsageService } from './openTabUsage.service'
 
 class CompletionObserver {
     get done$ (): Observable<void> { return this.done }
@@ -55,6 +56,7 @@ export class AppService {
     private _activeTab: BaseTabComponent | null = null
     private closedTabsStack: RecoveryToken[] = []
     private closingWindow = false
+    private tabUsageTrackingReady = false
 
     private activeTabChange = new Subject<BaseTabComponent|null>()
     private tabsChanged = new Subject<void>()
@@ -84,6 +86,7 @@ export class AppService {
         private hostWindow: HostWindowService,
         private tabRecovery: TabRecoveryService,
         private tabsService: TabsService,
+        private tabUsage: OpenTabUsageService,
         private selector: SelectorService,
         private ngbModal: NgbModal,
         private platform: PlatformService,
@@ -105,15 +108,20 @@ export class AppService {
         })
 
         config.ready$.toPromise().then(async () => {
-            if (this.bootstrapData.isMainWindow) {
-                if (config.store.recoverTabs) {
-                    const tabs = await this.tabRecovery.recoverTabs()
-                    for (const tab of tabs) {
-                        this.openNewTabRaw(tab)
+            try {
+                if (this.bootstrapData.isMainWindow) {
+                    if (config.store.recoverTabs) {
+                        const tabs = await this.tabRecovery.recoverTabs()
+                        for (const tab of tabs) {
+                            this.openNewTabRaw(tab, false)
+                        }
                     }
+                    /** Continue to store the tabs even if the setting is currently off */
+                    this.tabRecovery.enabled = true
                 }
-                /** Continue to store the tabs even if the setting is currently off */
-                this.tabRecovery.enabled = true
+            } finally {
+                this.tabUsageTrackingReady = true
+                this.tabUsage.activate(this._activeTab, this.tabs.indexOf(this._activeTab!), false)
             }
         })
 
@@ -126,14 +134,14 @@ export class AppService {
         hostWindow.windowFocused$.subscribe(() => this._activeTab?.emitFocused())
     }
 
-    addTabRaw (tab: BaseTabComponent, index: number|null = null): void {
+    addTabRaw (tab: BaseTabComponent, index: number|null = null, recordUsage = true): void {
         if (index !== null) {
             this.tabs.splice(index, 0, tab)
         } else {
             this.tabs.push(tab)
         }
 
-        this.selectTab(tab)
+        this.selectTab(tab, recordUsage)
         this.tabsChanged.next()
         this.tabOpened.next(tab)
 
@@ -169,7 +177,7 @@ export class AppService {
         const newIndex = Math.min(this.tabs.length - 2, this.tabs.indexOf(tab))
         this.tabs = this.tabs.filter((x) => x !== tab)
         if (tab === this._activeTab) {
-            this.selectTab(this.tabs[newIndex])
+            this.selectTab(this.tabs[newIndex], false)
         }
         this.tabsChanged.next()
     }
@@ -178,9 +186,9 @@ export class AppService {
      * Adds a new tab **without** wrapping it in a SplitTabComponent
      * @param inputs  Properties to be assigned on the new tab component instance
      */
-    openNewTabRaw <T extends BaseTabComponent> (params: NewTabParameters<T>): T {
+    openNewTabRaw <T extends BaseTabComponent> (params: NewTabParameters<T>, recordUsage = true): T {
         const tab = this.tabsService.create(params)
-        this.addTabRaw(tab)
+        this.addTabRaw(tab, null, recordUsage)
         return tab
     }
 
@@ -224,7 +232,10 @@ export class AppService {
         return null
     }
 
-    selectTab (tab: BaseTabComponent|null): void {
+    selectTab (tab: BaseTabComponent|null, recordUsage = true): void {
+        if (this.tabUsageTrackingReady) {
+            this.tabUsage.activate(tab, tab ? this.tabs.indexOf(tab) : -1, recordUsage)
+        }
         if (tab && this._activeTab === tab) {
             this._activeTab.emitFocused()
             return

@@ -2,7 +2,8 @@ import { Component, ElementRef, EventEmitter, HostBinding, Input, Output, ViewCh
 
 import { ConfigService } from '../services/config.service'
 import { AppService } from '../services/app.service'
-import { OpenTabItem, buildOpenTabItems, filterOpenTabItems } from '../utils/openTabs'
+import { OpenTabUsageService } from '../services/openTabUsage.service'
+import { RankedOpenTabItem, buildOpenTabItems, filterOpenTabItems } from '../utils/openTabs'
 
 import { BaseComponent } from './base.component'
 import { BaseTabComponent } from './baseTab.component'
@@ -21,9 +22,10 @@ export class OpenTabsMenuComponent extends BaseComponent {
     @ViewChild('tabList') tabList: ElementRef<HTMLElement>
 
     query = ''
-    items: OpenTabItem<BaseTabComponent>[] = []
-    filteredItems: OpenTabItem<BaseTabComponent>[] = []
+    items: RankedOpenTabItem<BaseTabComponent>[] = []
+    filteredItems: RankedOpenTabItem<BaseTabComponent>[] = []
     highlightedIndex = 0
+    mostUsedCount = 0
 
     @HostBinding('class.vibrant') get isVibrant (): boolean {
         return this.config.store.appearance.vibrancy
@@ -32,6 +34,7 @@ export class OpenTabsMenuComponent extends BaseComponent {
     constructor (
         private config: ConfigService,
         private app: AppService,
+        private tabUsage: OpenTabUsageService,
     ) {
         super()
         this.refreshItems()
@@ -44,8 +47,9 @@ export class OpenTabsMenuComponent extends BaseComponent {
             return
         }
         this.query = ''
+        this.tabUsage.checkpoint()
         this.refreshItems()
-        this.highlightedIndex = Math.max(0, this.filteredItems.findIndex(item => item.active))
+        this.highlightedIndex = 0
         setTimeout(() => {
             this.searchInput.nativeElement.focus()
             this.searchInput.nativeElement.select()
@@ -94,22 +98,27 @@ export class OpenTabsMenuComponent extends BaseComponent {
         this.scrollHighlightedItemIntoView()
     }
 
-    selectItem (item: OpenTabItem<BaseTabComponent>): void {
+    selectItem (item: RankedOpenTabItem<BaseTabComponent>): void {
         if (this.app.tabs.includes(item.tab)) {
             this.tabSelected.emit(item.tab)
         }
     }
 
-    trackByTab (_index: number, item: OpenTabItem<BaseTabComponent>): BaseTabComponent {
+    trackByTab (_index: number, item: RankedOpenTabItem<BaseTabComponent>): BaseTabComponent {
         return item.tab
     }
 
-    getItemID (item: OpenTabItem<BaseTabComponent>): string {
+    getItemID (item: RankedOpenTabItem<BaseTabComponent>): string {
         return `open-tab-item-${item.index}`
     }
 
+    isMostUsed (itemIndex: number): boolean {
+        return !this.query && itemIndex < this.mostUsedCount
+    }
+
     private refreshItems (): void {
-        this.items = buildOpenTabItems(this.app.tabs, this.app.activeTab)
+        this.items = this.tabUsage.rank(buildOpenTabItems(this.app.tabs, this.app.activeTab))
+        this.mostUsedCount = Math.min(5, this.items.filter(item => item.usageScore > 0).length)
         this.applyFilter()
     }
 

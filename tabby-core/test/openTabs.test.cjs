@@ -25,8 +25,10 @@ const {
     buildActiveSessionItems,
     buildCloseTabConfirmation,
     buildOpenTabItems,
+    getOpenTabUsageKey,
     filterOpenTabItems,
     getOpenTabLabel,
+    rankOpenTabItemsByUsage,
 } = sourceModule.exports
 
 test('uses a custom title before profile and live titles', () => {
@@ -101,6 +103,56 @@ test('filters case-insensitively and requires every search term', () => {
     )
     assert.equal(filterOpenTabItems(items, 'missing').length, 0)
     assert.strictEqual(filterOpenTabItems(items, '   '), items)
+})
+
+test('builds stable usage keys from profile IDs instead of changing shell titles', () => {
+    const tab = {
+        title: 'root@server:/first/path',
+        getAllTabs: () => [
+            { profile: { id: 'ssh:production', type: 'ssh', name: 'Production' } },
+            { profile: { id: 'local:logs', type: 'local', name: 'Logs' } },
+        ],
+    }
+
+    const firstKey = getOpenTabUsageKey(tab, 0)
+    tab.title = 'root@server:/another/path'
+
+    assert.equal(getOpenTabUsageKey(tab, 0), firstKey)
+    assert.equal(firstKey, 'profiles:ssh:ssh:production|local:local:logs')
+})
+
+test('ranks frequently used open tabs first without changing their real tab indexes', () => {
+    const now = Date.UTC(2026, 9, 21)
+    const tabs = [
+        { profile: { id: 'prisma', type: 'local', name: 'Prisma' } },
+        { profile: { id: 'wa-secret', type: 'ssh', name: 'Hamza — WASecret' } },
+        { profile: { id: 'other', type: 'ssh', name: 'Other' } },
+    ]
+    const items = buildOpenTabItems(tabs, tabs[0])
+    const usage = {
+        [getOpenTabUsageKey(tabs[0], 0)]: { score: 500, updatedAt: now, lastUsedAt: now - 20 },
+        [getOpenTabUsageKey(tabs[1], 1)]: { score: 900, updatedAt: now, lastUsedAt: now - 10 },
+    }
+
+    const ranked = rankOpenTabItemsByUsage(items, usage, now)
+
+    assert.deepEqual(ranked.map(item => ({ label: item.label, index: item.index, score: item.usageScore })), [
+        { label: 'Hamza — WASecret', index: 1, score: 900 },
+        { label: 'Prisma', index: 0, score: 500 },
+        { label: 'Other', index: 2, score: 0 },
+    ])
+    assert.deepEqual(items.map(item => item.label), ['Prisma', 'Hamza — WASecret', 'Other'])
+})
+
+test('the open-tabs menu separates the most-used tabs without moving their shortcut numbers', () => {
+    const template = fs.readFileSync(path.resolve(__dirname, '../src/components/openTabsMenu.component.pug'), 'utf8')
+    const component = fs.readFileSync(path.resolve(__dirname, '../src/components/openTabsMenu.component.ts'), 'utf8')
+
+    assert.match(template, /Most used/)
+    assert.match(template, /Other tabs/)
+    assert.match(template, /item\.index \+ 1/)
+    assert.match(component, /Math\.min\(5,/)
+    assert.match(component, /this\.highlightedIndex = 0/)
 })
 
 test('builds one live session item for every terminal pane across open tabs', async () => {
