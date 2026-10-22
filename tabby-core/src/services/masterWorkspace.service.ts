@@ -104,6 +104,25 @@ export class MasterWorkspaceService {
         await this.profiles.launchProfile(profile)
     }
 
+    async launchFreshConnection (item: ConnectionProjectItem<BaseTabComponent>): Promise<void> {
+        if (!item.profile) {
+            if (item.liveItem) { this.selectLiveConnection(item.liveItem) }
+            return
+        }
+        const profile = deepClone(item.profile) as PartialProfile<Profile>
+        const savedContext = profile.id
+            ? normalizeConnectionResumeContext(this.config.store.connectionResumeContexts?.[profile.id])
+            : null
+        if (savedContext) {
+            profile.options ??= {}
+            profile.options['aamirResumeContext'] = savedContext
+            if (profile.type === 'local' && savedContext.workingDirectory) {
+                profile.options['cwd'] = savedContext.workingDirectory
+            }
+        }
+        await this.profiles.launchProfile(profile)
+    }
+
     async saveProject (
         project: MasterWorkspaceProject<BaseTabComponent>,
         metadata: MasterWorkspaceProjectMetadata,

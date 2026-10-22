@@ -1,368 +1,439 @@
 .master-shell(role='main', aria-label='Master Workspace')
-    aside.master-rail(aria-label='Workspace navigation')
-        .brand
-            span.brand-mark AM
-            span.brand-copy
-                strong Aamir Terminal
-                small Master Workspace
+    aside.project-rail(aria-label='Founder workspace navigation')
+        .rail-header
+            .rail-title-row
+                span
+                    strong Founder command center
+                    small {{projectCount}} projects · {{attentionCount}} need attention
+                button.icon-button(type='button', title='Project registry', (click)='openRegistry()')
+                    i.fas.fa-folder-tree(aria-hidden='true')
+            label.rail-search
+                i.fas.fa-search(aria-hidden='true')
+                input(type='search', [(ngModel)]='projectQuery', placeholder='Filter projects', aria-label='Filter projects')
+                button(type='button', (click)='openCommandPalette()', aria-label='Open command palette') ⌘K
 
-        nav.rail-nav
-            button.rail-link(type='button', [class.active]='view === "overview"', (click)='showView("overview")')
-                i.fas.fa-grid-2(aria-hidden='true')
-                span Overview
-            button.rail-link(type='button', [class.active]='view === "work"', (click)='showView("work")')
-                i.fas.fa-list-check(aria-hidden='true')
-                span Work
-                span.nav-badge(*ngIf='totalOpen') {{totalOpen}}
-            button.rail-link(type='button', [class.active]='view === "knowledge"', (click)='showView("knowledge")')
+        nav.workspace-nav(aria-label='Workspace sections')
+            button.workspace-link(type='button', [class.active]='view === "overview"', (click)='showView("overview")')
+                i.fas.fa-list(aria-hidden='true')
+                span All projects
+                small {{projectCount}}
+            button.workspace-link(type='button', [class.active]='view === "knowledge"', (click)='showView("knowledge")')
                 i.fas.fa-book-open(aria-hidden='true')
                 span Knowledge
-            button.rail-link(type='button', [class.active]='view === "connections"', (click)='showView("connections")')
-                i.fas.fa-server(aria-hidden='true')
-                span Connections
-                span.live-dot(*ngIf='liveConnectionCount')
+            button.workspace-link(type='button', [class.active]='view === "settings"', (click)='showView("settings")')
+                i.fas.fa-tower-broadcast(aria-hidden='true')
+                span Sync & relay
+                small.relay-live(*ngIf='workspace.settings.relayUrl') Live
+            button.workspace-link(type='button', (click)='openRegistry()')
+                i.fas.fa-sitemap(aria-hidden='true')
+                span Registry
 
-        .rail-projects
-            .rail-section-label Projects
-            button.rail-project(
-                *ngFor='let project of projects; trackBy: trackByProject',
-                type='button',
-                [class.active]='selectedProject?.id === project.id',
-                (click)='openProject(project)',
-                [title]='project.name'
-            )
-                span.project-avatar([style.background-color]='project.color || null') {{project.name.slice(0, 2).toUpperCase()}}
-                span {{project.name}}
-                span.rail-project-state([class.live]='project.liveCount > 0')
+        .project-groups
+            section.project-group(*ngIf='attentionProjects.length')
+                .group-label.attention
+                    span Needs attention
+                    small {{attentionProjects.length}}
+                button.project-list-item(
+                    *ngFor='let project of attentionProjects; trackBy: trackByProject',
+                    type='button',
+                    [class.active]='selectedProject?.id === project.id && view === "project"',
+                    (click)='openProject(project)'
+                )
+                    span.priority-stripe([class]="'p' + project.priority")
+                    span.project-list-copy
+                        strong {{project.name}}
+                        small([class.danger-text]='project.metadata.health === "down" || project.metadata.work.blocked') {{project.attention.reasons[0]?.label || 'Needs review'}}
+                    span.project-list-meta
+                        small {{project.progress}}%
+                        small
+                            span.connection-dot([class.live]='project.liveCount > 0')
+                            | {{project.liveCount}}/{{project.connections.length}}
+            section.project-group(*ngIf='watchProjects.length')
+                .group-label.watch
+                    span Watch
+                    small {{watchProjects.length}}
+                button.project-list-item(
+                    *ngFor='let project of watchProjects; trackBy: trackByProject',
+                    type='button',
+                    [class.active]='selectedProject?.id === project.id && view === "project"',
+                    (click)='openProject(project)'
+                )
+                    span.priority-stripe([class]="'p' + project.priority")
+                    span.project-list-copy
+                        strong {{project.name}}
+                        small {{project.attention.reasons[0]?.label || 'Monitor project'}}
+                    span.project-list-meta
+                        small {{project.progress}}%
+                        small
+                            span.connection-dot([class.live]='project.liveCount > 0')
+                            | {{project.liveCount}}/{{project.connections.length}}
+            section.project-group(*ngIf='steadyProjects.length')
+                .group-label.steady
+                    span On track
+                    small {{steadyProjects.length}}
+                button.project-list-item(
+                    *ngFor='let project of steadyProjects; trackBy: trackByProject',
+                    type='button',
+                    [class.active]='selectedProject?.id === project.id && view === "project"',
+                    (click)='openProject(project)'
+                )
+                    span.priority-stripe([class]="'p' + project.priority")
+                    span.project-list-copy
+                        strong {{project.name}}
+                        small {{project.connections.length}} saved connections
+                    span.project-list-meta
+                        small {{project.progress}}%
+                        small
+                            span.connection-dot([class.live]='project.liveCount > 0')
+                            | {{project.liveCount}}/{{project.connections.length}}
+            .empty-rail(*ngIf='visibleProjects.length === 0') No matching projects
 
-        .rail-bottom
-            button.rail-link(type='button', (click)='snippetsRequested.emit()')
-                i.fas.fa-code(aria-hidden='true')
-                span Snippets
-            button.rail-link(type='button', [class.active]='view === "settings"', (click)='showView("settings")')
-                i.fas.fa-sliders(aria-hidden='true')
-                span Settings
+        button.relay-footer(type='button', (click)='showView("settings")')
+            span.relay-orb([class.configured]='workspace.settings.relayUrl')
+            span
+                strong {{workspace.settings.relayUrl ? 'Plane live via relay' : 'Local workspace'}}
+                small {{workspace.settings.relayUrl ? 'Realtime project updates' : 'Configure secure realtime sync'}}
+            i.fas.fa-chevron-right(aria-hidden='true')
 
-    section.master-main
-        header.master-topbar
-            .topbar-title
-                button.back-button(*ngIf='view === "project"', type='button', aria-label='Back to all projects', (click)='showView("overview")')
-                    i.fas.fa-arrow-left(aria-hidden='true')
-                span {{view === 'project' && selectedProject ? selectedProject.name : view === 'overview' ? 'Founder command center' : view === 'work' ? 'Project work' : view === 'knowledge' ? 'Knowledge' : view === 'connections' ? 'Connections' : 'Workspace settings'}}
-            button.command-trigger(type='button', (click)='openCommandPalette()', aria-label='Search projects, servers, folders and commands')
-                i.fas.fa-search(aria-hidden='true')
-                span Search anything
-                kbd ⌘K
-            .relay-state([class.configured]='workspace.settings.relayUrl')
-                span.state-dot
-                span {{workspace.settings.relayUrl ? 'Relay endpoint set' : 'Local data'}}
-
+    section.workspace-main
         .master-error(*ngIf='error || workspace.error')
             i.fas.fa-circle-exclamation(aria-hidden='true')
             span {{error || workspace.error}}
         .master-status(*ngIf='status') {{status}}
-
         .master-loading(*ngIf='workspace.loading')
             i.fas.fa-circle-notch.fa-spin(aria-hidden='true')
             span Loading workspace…
 
-        .master-scroll(*ngIf='!workspace.loading')
-            section.overview-view(*ngIf='view === "overview"')
-                .hero-row
-                    .hero-copy
-                        span.eyebrow MASTER WORKSPACE
-                        h1 Founder command center
-                        p {{projectCount}} projects · {{attentionCount}} need attention · {{liveConnectionCount}} live connections
-                    .hero-actions
-                        button.secondary-action(type='button', (click)='connectionsRequested.emit()')
-                            i.fas.fa-columns(aria-hidden='true')
-                            span Open navigator
-                        button.primary-action(type='button', (click)='openCommandPalette()')
-                            i.fas.fa-bolt(aria-hidden='true')
-                            span Run command
-
-                .metric-grid
-                    article.metric-card
-                        span.metric-icon.attention
-                            i.fas.fa-triangle-exclamation(aria-hidden='true')
-                        span.metric-copy
-                            strong {{attentionCount}}
-                            small Need attention
-                    article.metric-card
-                        span.metric-icon.live
-                            i.fas.fa-terminal(aria-hidden='true')
-                        span.metric-copy
-                            strong {{liveConnectionCount}}
-                            small Live sessions
-                    article.metric-card
-                        span.metric-icon.done
-                            i.fas.fa-circle-check(aria-hidden='true')
-                        span.metric-copy
-                            strong {{totalCompleted}}
-                            small Tasks completed
-                    article.metric-card
-                        span.metric-icon.plane
-                            i.fas.fa-tower-broadcast(aria-hidden='true')
-                        span.metric-copy
-                            strong {{mappedProjectCount}}/{{projectCount}}
-                            small Plane mapped
-
-                .attention-strip(*ngIf='attentionProjects.length')
-                    .section-heading
-                        span
-                            i.fas.fa-bolt(aria-hidden='true')
-                            strong Needs your attention
-                        small Ranked by health, blocked work, overdue work, priority and resumable tmux
-                    .attention-cards
-                        button.attention-card(
-                            *ngFor='let project of attentionProjects; trackBy: trackByProject',
-                            type='button',
-                            (click)='openProject(project)'
-                        )
-                            span.attention-score {{project.attention.score}}
-                            span.attention-copy
-                                strong {{project.name}}
-                                small {{project.attention.reasons[0]?.label || 'Priority project'}}
-                            i.fas.fa-arrow-right(aria-hidden='true')
-
-                .projects-panel
-                    .section-heading.projects-heading
-                        span
-                            strong All projects
-                            small Ordered by what needs you first
-                        label.table-search
-                            i.fas.fa-search(aria-hidden='true')
-                            input(type='search', [(ngModel)]='projectQuery', placeholder='Filter projects', aria-label='Filter projects')
-                    .project-table(role='table', aria-label='All projects')
-                        .project-table-head(role='row')
-                            span(role='columnheader') Project
-                            span(role='columnheader') Progress
-                            span(role='columnheader') Open work
-                            span(role='columnheader') Servers · tmux
-                            span(role='columnheader') Knowledge · /aamir
-                            span(role='columnheader') Activity
-                        button.project-row(
-                            *ngFor='let project of visibleProjects; trackBy: trackByProject',
-                            type='button',
-                            role='row',
-                            (click)='openProject(project)'
-                        )
-                            span.project-cell.project-identity(role='cell')
-                                span.priority-pill([class]="'priority-pill p' + project.priority") P{{project.priority}}
-                                span.project-avatar([style.background-color]='project.color || null') {{project.name.slice(0, 2).toUpperCase()}}
-                                span.project-title
-                                    strong {{project.name}}
-                                    small {{project.metadata.description || project.connections.length + ' saved connections'}}
-                            span.project-cell.progress-cell(role='cell')
-                                span.progress-copy
-                                    strong {{project.progress}}%
-                                    small {{project.metadata.work.completed}}/{{project.metadata.work.total || '—'}}
-                                span.progress-track
-                                    span.progress-value([style.width.%]='project.progress')
-                            span.project-cell.work-cell(role='cell')
-                                strong {{project.openWork}}
-                                small
-                                    span.danger-text(*ngIf='project.metadata.work.blocked') {{project.metadata.work.blocked}} blocked
-                                    span(*ngIf='!project.metadata.work.blocked') No blockers
-                            span.project-cell.servers-cell(role='cell')
-                                strong {{project.liveCount}} / {{project.connections.length}} live
-                                small {{project.connections[0]?.status?.tmuxSession || project.connections[0]?.label || 'No connection'}}
-                            span.project-cell.knowledge-cell(role='cell')
-                                span.knowledge-badge([class]='project.metadata.knowledge.status') {{project.metadata.knowledge.status}}
-                                small {{project.metadata.knowledge.path}}
-                            span.project-cell.activity-cell(role='cell')
-                                strong {{relativeTime(project.metadata.lastActivityAt)}}
-                                small Score {{project.attention.score}}
-                    .empty-state(*ngIf='visibleProjects.length === 0')
-                        i.fas.fa-folder-open(aria-hidden='true')
-                        strong No matching projects
-                        span Profile groups appear here automatically.
-
-            section.project-view(*ngIf='view === "project" && selectedProject')
-                .project-hero
-                    .project-hero-copy
-                        span.project-avatar.large([style.background-color]='selectedProject.color || null') {{selectedProject.name.slice(0, 2).toUpperCase()}}
-                        span
-                            span.project-kicker P{{selectedProject.priority}} · attention score {{selectedProject.attention.score}}
-                            h1 {{selectedProject.name}}
-                            p {{selectedProject.metadata.description || 'Add a short description so the project is easier to identify.'}}
-                    .project-hero-actions
-                        button.secondary-action(type='button', (click)='openEditor(selectedProject)')
-                            i.fas.fa-pen(aria-hidden='true')
-                            span Registry
-                        button.primary-action(type='button', [disabled]='selectedProject.connections.length === 0', (click)='openFirstConnection(selectedProject)')
-                            i.fas.fa-terminal(aria-hidden='true')
-                            span Open terminal
-
-                .project-summary-grid
-                    article.summary-card
-                        span.card-label Progress · Plane
-                        strong.card-value {{selectedProject.progress}}%
-                        .progress-track.large
-                            span.progress-value([style.width.%]='selectedProject.progress')
-                        small {{selectedProject.metadata.work.completed}} completed · {{selectedProject.openWork}} open
-                    article.summary-card
-                        span.card-label Open work
-                        strong.card-value {{selectedProject.openWork}}
-                        small {{selectedProject.metadata.work.blocked}} blocked · {{selectedProject.metadata.work.overdue}} overdue
-                    article.summary-card
-                        span.card-label Environments
-                        strong.card-value {{selectedProject.liveCount}}/{{selectedProject.connections.length}}
-                        small Live saved connections
-                    article.summary-card
-                        span.card-label Knowledge · /aamir
-                        strong.card-value.status-word([class]='selectedProject.metadata.knowledge.status') {{selectedProject.metadata.knowledge.status}}
-                        small {{selectedProject.metadata.knowledge.path}}
-
-                .project-columns
-                    .project-column
-                        article.detail-card
-                            .detail-card-heading
-                                span
-                                    i.fas.fa-server(aria-hidden='true')
-                                    strong Connections
-                                small Start only when clicked
-                            button.connection-card(
-                                *ngFor='let item of selectedProject.connections; trackBy: trackByConnection',
-                                type='button',
-                                [disabled]='busyConnectionKey !== null',
-                                (click)='openConnection(item)'
-                            )
-                                span.connection-state([class]='item.status.state')
-                                span.connection-copy
-                                    strong {{item.label}}
-                                    small {{statusLabel(item)}} · {{item.status.detail}}
-                                    code(*ngIf='item.status.workingDirectory') {{item.status.workingDirectory}}
-                                    code(*ngIf='item.status.tmuxSession') tmux · {{item.status.tmuxSession}}
-                                i.fas([class.fa-arrow-right]='item.liveItem', [class.fa-play]='!item.liveItem', aria-hidden='true')
-                            .card-empty(*ngIf='selectedProject.connections.length === 0') Add a saved profile to this project group to open it here.
-
-                        article.detail-card
-                            .detail-card-heading
-                                span
-                                    i.fas.fa-note-sticky(aria-hidden='true')
-                                    strong Founder notes
-                                button.text-action(type='button', (click)='openEditor(selectedProject)') Edit
-                            p.notes-copy(*ngIf='selectedProject.metadata.notes') {{selectedProject.metadata.notes}}
-                            button.card-empty(*ngIf='!selectedProject.metadata.notes', type='button', (click)='openEditor(selectedProject)') Add decisions, current focus or the next action.
-
-                    .project-column
-                        article.detail-card
-                            .detail-card-heading
-                                span
-                                    i.fas.fa-triangle-exclamation(aria-hidden='true')
-                                    strong Why it needs attention
-                            .reason-row(*ngFor='let reason of selectedProject.attention.reasons')
-                                span.reason-score +{{reason.score}}
-                                span {{reason.label}}
-                            .card-empty(*ngIf='selectedProject.attention.reasons.length === 0') Nothing needs your attention right now.
-
-                        article.detail-card
-                            .detail-card-heading
-                                span
-                                    i.fas.fa-book-open(aria-hidden='true')
-                                    strong Knowledge · /aamir
-                                span.knowledge-badge([class]='selectedProject.metadata.knowledge.status') {{selectedProject.metadata.knowledge.status}}
-                            code.knowledge-path {{selectedProject.metadata.knowledge.path}}
-                            p Knowledge is indexed through the secure relay and existing connections. Server credentials never enter this dashboard.
-                            button.secondary-action.small(type='button', (click)='showView("knowledge")') Open knowledge
-
-                        article.detail-card(*ngIf='selectedProject.metadata.links.length')
-                            .detail-card-heading
-                                span
+        .workspace-scroll(*ngIf='!workspace.loading')
+            section.project-page(*ngIf='view === "project" && selectedProject')
+                header.project-header
+                    .breadcrumbs
+                        button(type='button', (click)='showView("overview")') All projects
+                        i.fas.fa-chevron-right(aria-hidden='true')
+                        span {{selectedProject.name}}
+                        small Top of the list · attention score {{selectedProject.attention.score}}
+                    .project-heading-row
+                        .project-heading
+                            .title-line
+                                h1 {{selectedProject.name}}
+                                span.priority-chip([class]="'p' + selectedProject.priority") P{{selectedProject.priority}} {{selectedProject.priority === 1 ? 'Critical' : selectedProject.priority === 2 ? 'High' : selectedProject.priority === 3 ? 'Normal' : 'Low'}}
+                                span.plane-state([class.live]='selectedProject.metadata.plane.status === "live"')
+                                    span.connection-dot([class.live]='selectedProject.metadata.plane.status === "live"')
+                                    | Plane · {{selectedProject.metadata.plane.identifier || 'unmapped'}} · {{selectedProject.metadata.plane.status}}
+                            p {{selectedProject.metadata.description || 'Add a description in Registry to describe this project.'}}
+                            .project-links(*ngIf='selectedProject.metadata.links.length')
+                                button.link-chip(*ngFor='let link of selectedProject.metadata.links', type='button', (click)='workspace.openLink(link.url)')
                                     i.fas.fa-link(aria-hidden='true')
-                                    strong Project links
-                            button.link-row(*ngFor='let link of selectedProject.metadata.links', type='button', (click)='workspace.openLink(link.url)')
-                                span {{link.label}}
+                                    span {{link.label}}
+                                    i.fas.fa-arrow-up-right-from-square(aria-hidden='true')
+                            .project-tags(*ngIf='projectTags(selectedProject).length')
+                                span(*ngFor='let tag of projectTags(selectedProject)') {{tag}}
+                        .project-actions
+                            button.action-button.primary(type='button', [disabled]='selectedProject.connections.length === 0', (click)='terminalDrawerOpen = !terminalDrawerOpen')
+                                i.fas.fa-terminal(aria-hidden='true')
+                                span Terminal
+                            button.action-button(type='button', [disabled]='selectedProject.connections.length === 0', (click)='openFirstConnection(selectedProject)')
                                 i.fas.fa-arrow-up-right-from-square(aria-hidden='true')
+                                span Open as tab
+                            button.action-button.feature(type='button', [disabled]='selectedProject.connections.length === 0', (click)='openFeatureConnection(selectedProject)')
+                                i.fas.fa-code-branch(aria-hidden='true')
+                                span New feature tab
+                            button.action-button(type='button', (click)='scanProject(selectedProject)')
+                                i.fas.fa-satellite-dish(aria-hidden='true')
+                                span Scan server
+                            button.action-button(type='button', (click)='openEditor(selectedProject)')
+                                i.fas.fa-sitemap(aria-hidden='true')
+                                span Registry
+                    nav.project-tabs(aria-label='Project sections')
+                        button(type='button', [class.active]='projectSection === "summary"', (click)='showProjectSection("summary")') Summary
+                        button(type='button', [class.active]='projectSection === "work"', (click)='showProjectSection("work")')
+                            | Work items
+                            small {{selectedProject.openWork}}
+                        button(type='button', [class.active]='projectSection === "knowledge"', (click)='showProjectSection("knowledge")')
+                            | Knowledge
+                            small {{selectedProject.metadata.knowledge.status}}
+                        button(type='button', [class.active]='projectSection === "connections"', (click)='showProjectSection("connections")')
+                            | Connections
+                            small {{selectedProject.connections.length}}
+                        button(type='button', [class.active]='projectSection === "commands"', (click)='showProjectSection("commands")') Commands
+                        button(type='button', [class.active]='projectSection === "activity"', (click)='showProjectSection("activity")') Activity
 
-            section.simple-view(*ngIf='view === "work"')
-                .view-intro
-                    span.eyebrow PLANE + LOCAL CACHE
-                    h1 Work across every project
-                    p Use one view to see completed, open, blocked and overdue work. Counts remain available offline from the last trusted snapshot.
-                .work-grid
-                    button.work-project-card(*ngFor='let project of projects; trackBy: trackByProject', type='button', (click)='openProject(project)')
-                        .work-card-top
-                            span.project-avatar([style.background-color]='project.color || null') {{project.name.slice(0, 2).toUpperCase()}}
-                            span
-                                strong {{project.name}}
-                                small {{project.metadata.plane.identifier || 'Not mapped to Plane'}}
-                            span.priority-pill([class]="'priority-pill p' + project.priority") P{{project.priority}}
-                        .work-card-progress
-                            strong {{project.progress}}%
-                            .progress-track
-                                span.progress-value([style.width.%]='project.progress')
-                        .work-stats
-                            span
-                                strong {{project.metadata.work.completed}}
-                                small Done
-                            span
-                                strong {{project.openWork}}
-                                small Open
-                            span.danger-text
-                                strong {{project.metadata.work.blocked}}
-                                small Blocked
-                            span.warning-text
-                                strong {{project.metadata.work.overdue}}
-                                small Overdue
+                .project-body
+                    section.summary-layout(*ngIf='projectSection === "summary"')
+                        .summary-primary
+                            article.workspace-card.attention-card
+                                .card-title Why it needs attention
+                                .attention-reason(*ngFor='let reason of selectedProject.attention.reasons')
+                                    span.reason-icon([class]="'reason-' + reason.kind")
+                                        i.fas.fa-bolt(aria-hidden='true')
+                                    span.reason-copy
+                                        strong {{reason.label}}
+                                        small {{selectedProject.name}} · attention weight +{{reason.score}}
+                                    button(type='button', (click)='reason.kind === "blocked" || reason.kind === "overdue" ? showProjectSection("work") : showProjectSection("connections")') {{reason.kind === 'blocked' || reason.kind === 'overdue' ? 'View items' : 'Open'}}
+                                .card-empty(*ngIf='selectedProject.attention.reasons.length === 0') Nothing here needs you right now.
+                            article.workspace-card(*ngIf='(selectedProject.metadata.work.items || []).length')
+                                .card-title-row
+                                    span.card-title Blocked and overdue
+                                    button.text-action(type='button', (click)='showProjectSection("work")') All work items →
+                                .work-row(*ngFor='let item of selectedProject.metadata.work.items || []')
+                                    code {{item.id}}
+                                    span
+                                        strong {{item.title}}
+                                        small {{item.assignee || item.module || 'Unassigned'}}
+                                    span.state-pill([class]='item.state') {{workStateLabel(item.state)}}
+                            section.environment-section
+                                .card-title-row
+                                    span.card-title Environments
+                                    small {{selectedProject.liveCount}} of {{selectedProject.connections.length}} live
+                                .environment-grid
+                                    article.environment-card(*ngFor='let item of selectedProject.connections; trackBy: trackByConnection')
+                                        .environment-head
+                                            strong {{item.label}}
+                                            span.connection-status([class]='item.status.state')
+                                                span.connection-dot([class.live]='item.status.state === "running"')
+                                                | {{statusLabel(item)}}
+                                        small {{item.status.detail}}
+                                        code(*ngIf='item.status.workingDirectory') {{item.status.workingDirectory}}
+                                        code(*ngIf='item.status.tmuxSession') tmux · {{item.status.tmuxSession}}
+                                        button.mini-button(type='button', [disabled]='busyConnectionKey !== null', (click)='openConnection(item)')
+                                            i.fas.fa-terminal(aria-hidden='true')
+                                            span {{item.liveItem ? 'Focus' : 'Connect'}}
+                                    .card-empty(*ngIf='selectedProject.connections.length === 0') Add a saved profile to this project in Connections.
+                        .summary-secondary
+                            article.workspace-card.revenue-card
+                                .card-title-row
+                                    span.card-title Revenue
+                                    small 12 months · {{formatMoney(revenueTotal(selectedProject), selectedProject.metadata.revenue.currency)}}
+                                .revenue-value
+                                    strong {{formatMoney(selectedProject.metadata.revenue.currentMonthly, selectedProject.metadata.revenue.currency)}}/mo
+                                    span.positive(*ngIf='revenueDelta(selectedProject) !== null') {{revenueDelta(selectedProject)}}% vs previous month
+                                .revenue-chart(*ngIf='selectedProject.metadata.revenue.history.length')
+                                    span(*ngFor='let bar of revenueBars(selectedProject)', [style.height.px]='bar.height', [title]='bar.month + ": " + formatMoney(bar.amount, selectedProject.metadata.revenue.currency)')
+                                .revenue-months(*ngIf='selectedProject.metadata.revenue.history.length')
+                                    span(*ngFor='let bar of revenueBars(selectedProject)') {{bar.month.slice(-2)}}
+                                p(*ngIf='selectedProject.metadata.revenue.status === "unmapped"') Revenue is not connected yet. Add the trusted source in Registry.
+                                p(*ngIf='selectedProject.metadata.revenue.status !== "unmapped"') Source · {{selectedProject.metadata.revenue.source || 'Manual registry'}}
+                            article.workspace-card.progress-card
+                                .card-title-row
+                                    span.card-title Progress · Plane
+                                    small {{selectedProject.metadata.plane.identifier || 'Not mapped'}}
+                                .progress-value-large {{selectedProject.progress}}%
+                                .progress-track
+                                    span([style.width.%]='selectedProject.progress')
+                                .progress-stats
+                                    span
+                                        strong {{selectedProject.metadata.work.completed}}
+                                        small Completed
+                                    span
+                                        strong {{selectedProject.openWork}}
+                                        small Open
+                                    span
+                                        strong {{selectedProject.metadata.work.blocked}}
+                                        small Blocked
+                                    span
+                                        strong {{selectedProject.metadata.work.overdue}}
+                                        small Overdue
+                            article.workspace-card.knowledge-summary
+                                .card-title-row
+                                    span.card-title Knowledge · /aamir
+                                    span.knowledge-state([class]='selectedProject.metadata.knowledge.status') {{selectedProject.metadata.knowledge.status}}
+                                code {{selectedProject.metadata.knowledge.path}}
+                                p {{selectedProject.metadata.notes || 'Project knowledge will appear here after the secure relay indexes its /aamir folder.'}}
+                                button.mini-button(type='button', (click)='showProjectSection("knowledge")') Open knowledge
 
-            section.simple-view(*ngIf='view === "knowledge"')
-                .view-intro
-                    span.eyebrow SECURE PROJECT CONTEXT
-                    h1 Knowledge · /aamir
-                    p Each project points to its own knowledge directory. Secret-like files, keys and files over the configured limits are excluded by the relay design.
-                .knowledge-grid
-                    article.knowledge-card(*ngFor='let project of projects; trackBy: trackByProject')
-                        .knowledge-card-head
-                            span.project-avatar([style.background-color]='project.color || null') {{project.name.slice(0, 2).toUpperCase()}}
+                    section.section-panel(*ngIf='projectSection === "work"')
+                        .section-intro
                             span
-                                strong {{project.name}}
-                                code {{project.metadata.knowledge.path}}
-                            span.knowledge-badge([class]='project.metadata.knowledge.status') {{project.metadata.knowledge.status}}
-                        p {{project.metadata.notes || project.metadata.description || 'No project knowledge summary saved yet.'}}
-                        .knowledge-card-actions
-                            button.text-action(type='button', (click)='openProject(project)') Project details
-                            button.text-action(type='button', (click)='openEditor(project)') Configure
+                                h2 Work items
+                                p Plane work for {{selectedProject.name}}, available from the last trusted snapshot.
+                            .section-metrics
+                                strong {{selectedProject.metadata.work.completed}}/{{selectedProject.metadata.work.total || 0}}
+                                small completed
+                        .work-table
+                            .work-row.header
+                                span ID
+                                span Work item
+                                span Owner / module
+                                span State
+                            .work-row(*ngFor='let item of selectedProject.metadata.work.items || []')
+                                code {{item.id}}
+                                span
+                                    strong {{item.title}}
+                                    small(*ngIf='item.dueDate') Due {{item.dueDate}}
+                                span {{item.assignee || item.module || 'Unassigned'}}
+                                span.state-pill([class]='item.state') {{workStateLabel(item.state)}}
+                            .card-empty(*ngIf='!(selectedProject.metadata.work.items || []).length') Work totals are connected, but item details have not synced yet.
 
-            section.simple-view(*ngIf='view === "connections"')
-                .view-intro.with-action
+                    section.section-panel(*ngIf='projectSection === "knowledge"')
+                        .section-intro
+                            span
+                                h2 Knowledge · /aamir
+                                p Current project context from the registered server folder.
+                            span.knowledge-state([class]='selectedProject.metadata.knowledge.status') {{selectedProject.metadata.knowledge.status}}
+                        article.workspace-card.knowledge-document
+                            code {{selectedProject.metadata.knowledge.path}}
+                            h3 Founder notes
+                            p {{selectedProject.metadata.notes || 'No indexed summary is available yet. Use Scan server after the secure relay is configured.'}}
+                            button.mini-button(type='button', (click)='scanProject(selectedProject)')
+                                i.fas.fa-rotate(aria-hidden='true')
+                                span Refresh knowledge
+
+                    section.section-panel(*ngIf='projectSection === "connections"')
+                        .section-intro
+                            span
+                                h2 Connections
+                                p Saved and live environments. A server starts only when you click it.
+                            button.action-button(type='button', (click)='connectionsRequested.emit()') Open navigator
+                        .connections-grid
+                            article.environment-card(*ngFor='let item of selectedProject.connections; trackBy: trackByConnection')
+                                .environment-head
+                                    strong {{item.label}}
+                                    span.connection-status([class]='item.status.state') {{statusLabel(item)}}
+                                small {{item.status.detail}}
+                                code(*ngIf='item.status.workingDirectory') {{item.status.workingDirectory}}
+                                code(*ngIf='item.status.tmuxSession') tmux · {{item.status.tmuxSession}}
+                                button.action-button(type='button', [disabled]='busyConnectionKey !== null', (click)='openConnection(item)') {{item.liveItem ? 'Focus terminal' : 'Connect'}}
+                            .card-empty(*ngIf='selectedProject.connections.length === 0') No connections are assigned to this project.
+
+                    section.section-panel(*ngIf='projectSection === "commands"')
+                        .section-intro
+                            span
+                                h2 Commands
+                                p Run saved command groups for this project without duplicating snippets.
+                            button.action-button.primary(type='button', (click)='snippetsRequested.emit()') Open snippets
+                        article.workspace-card.command-help
+                            i.fas.fa-code(aria-hidden='true')
+                            span
+                                strong Project command library
+                                p Group deploy, logs, migrations and health checks in Snippets, then run them in the selected connection.
+
+                    section.section-panel(*ngIf='projectSection === "activity"')
+                        .section-intro
+                            span
+                                h2 Activity
+                                p Local project and session activity.
+                        article.workspace-card.activity-list
+                            .activity-row
+                                i.fas.fa-clock(aria-hidden='true')
+                                span Project registry updated
+                                small {{relativeTime(selectedProject.metadata.lastActivityAt)}}
+                            .activity-row(*ngFor='let item of selectedProject.connections; trackBy: trackByConnection')
+                                i.fas.fa-terminal(aria-hidden='true')
+                                span {{item.label}} · {{statusLabel(item)}}
+                                small {{item.status.workingDirectory || item.status.tmuxSession || item.status.detail}}
+
+            section.overview-page(*ngIf='view === "overview"')
+                .page-heading
                     span
-                        span.eyebrow ON DEMAND
-                        h1 Saved and live connections
-                        p Nothing connects automatically. Click one server to start or resume only that session.
-                    button.secondary-action(type='button', (click)='connectionsRequested.emit()') Open full navigator
-                .connection-projects
-                    article.connection-project(*ngFor='let project of projects; trackBy: trackByProject')
-                        .connection-project-head
+                        h1 All projects
+                        p Ordered by production health, blocked and overdue work, priority, Plane sync, and resumable sessions.
+                    button.action-button.primary(type='button', (click)='openCommandPalette()')
+                        i.fas.fa-search(aria-hidden='true')
+                        span Search & commands
+                .overview-metrics
+                    article
+                        strong {{projectCount}}
+                        span Projects
+                    article
+                        strong.danger-text {{attentionCount}}
+                        span Need attention
+                    article
+                        strong.positive {{liveConnectionCount}}
+                        span Live sessions
+                    article
+                        strong {{totalCompleted}}
+                        span Work completed
+                .project-overview-table
+                    .overview-row.header
+                        span Project
+                        span Progress
+                        span Revenue · 12 mo
+                        span Open work
+                        span Servers · tmux
+                        span Knowledge · /aamir
+                        span Activity
+                    button.overview-row(*ngFor='let project of visibleProjects; trackBy: trackByProject', type='button', (click)='openProject(project)')
+                        span.project-name-cell
+                            span.priority-chip([class]="'p' + project.priority") P{{project.priority}}
                             span
                                 strong {{project.name}}
-                                small {{project.liveCount}}/{{project.connections.length}} live
-                            span.priority-pill([class]="'priority-pill p' + project.priority") P{{project.priority}}
-                        button.connection-card(
-                            *ngFor='let item of project.connections; trackBy: trackByConnection',
-                            type='button',
-                            [disabled]='busyConnectionKey !== null',
-                            (click)='openConnection(item)'
-                        )
-                            span.connection-state([class]='item.status.state')
-                            span.connection-copy
+                                small {{project.attention.reasons[0]?.label || project.metadata.description}}
+                        span
+                            strong {{project.progress}}%
+                            small {{project.metadata.work.completed}}/{{project.metadata.work.total || 0}} complete
+                        span
+                            strong {{formatMoney(project.metadata.revenue.currentMonthly, project.metadata.revenue.currency)}}
+                            small {{project.metadata.revenue.status}}
+                        span
+                            strong {{project.openWork}}
+                            small {{project.metadata.work.blocked}} blocked
+                        span
+                            strong {{project.liveCount}}/{{project.connections.length}} live
+                            small {{project.connections[0]?.status?.tmuxSession || 'On demand'}}
+                        span
+                            strong {{project.metadata.knowledge.status}}
+                            small {{project.metadata.knowledge.path}}
+                        span
+                            strong {{relativeTime(project.metadata.lastActivityAt)}}
+                            small Score {{project.attention.score}}
+
+            section.global-page(*ngIf='view === "knowledge"')
+                .page-heading
+                    span
+                        h1 Knowledge · /aamir
+                        p Every project’s registered knowledge source, without exposing credentials in the dashboard.
+                .global-grid
+                    button.global-card(*ngFor='let project of projects; trackBy: trackByProject', type='button', (click)='openProject(project); showProjectSection("knowledge")')
+                        .card-title-row
+                            strong {{project.name}}
+                            span.knowledge-state([class]='project.metadata.knowledge.status') {{project.metadata.knowledge.status}}
+                        code {{project.metadata.knowledge.path}}
+                        p {{project.metadata.notes || project.metadata.description}}
+
+            section.global-page(*ngIf='view === "work"')
+                .page-heading
+                    span
+                        h1 Work across projects
+                        p Completed, open, blocked and overdue work from Plane and the local snapshot.
+                .global-grid
+                    button.global-card(*ngFor='let project of projects; trackBy: trackByProject', type='button', (click)='openProject(project); showProjectSection("work")')
+                        .card-title-row
+                            strong {{project.name}}
+                            span.priority-chip([class]="'p' + project.priority") P{{project.priority}}
+                        .progress-value-large {{project.progress}}%
+                        .progress-track
+                            span([style.width.%]='project.progress')
+                        p {{project.metadata.work.completed}} done · {{project.openWork}} open · {{project.metadata.work.blocked}} blocked
+
+            section.global-page(*ngIf='view === "connections"')
+                .page-heading
+                    span
+                        h1 Saved and live connections
+                        p Servers remain offline until you choose one.
+                    button.action-button(type='button', (click)='connectionsRequested.emit()') Open navigator
+                .global-grid
+                    article.global-card(*ngFor='let project of projects; trackBy: trackByProject')
+                        .card-title-row
+                            strong {{project.name}}
+                            small {{project.liveCount}}/{{project.connections.length}} live
+                        button.connection-line(*ngFor='let item of project.connections; trackBy: trackByConnection', type='button', (click)='openConnection(item)')
+                            span.connection-dot([class.live]='item.status.state === "running"')
+                            span
                                 strong {{item.label}}
                                 small {{statusLabel(item)}}
-                                code(*ngIf='item.status.workingDirectory') {{item.status.workingDirectory}}
                             i.fas.fa-play(aria-hidden='true')
 
-            section.simple-view.settings-view(*ngIf='view === "settings"')
-                .view-intro
-                    span.eyebrow SECURE REALTIME
-                    h1 Plane relay
-                    p Aamir Terminal connects to a signed relay. The Plane API key and webhook secret stay on the relay server and never enter this app, config.yaml, logs or Git.
+            section.global-page.settings-page(*ngIf='view === "settings"')
+                .page-heading
+                    span
+                        h1 Sync & relay
+                        p True realtime Plane updates through a signed relay. API keys stay on the relay server.
                 form.settings-card((ngSubmit)='saveSettings()')
                     .settings-status
                         span.relay-orb([class.configured]='settingsDraft.relayUrl')
                         span
                             strong {{settingsDraft.relayUrl ? 'Relay ready to connect' : 'Relay not configured'}}
-                            small True realtime uses signed Plane webhooks and an SSE event stream.
+                            small Signed Plane webhooks and an SSE event stream update this workspace.
                     label.field-label
                         span Relay HTTPS URL
                         input(type='url', name='relayUrl', [(ngModel)]='settingsDraft.relayUrl', placeholder='https://relay.example.com')
@@ -371,33 +442,40 @@
                         input(type='text', name='workspaceSlug', [(ngModel)]='settingsDraft.workspaceSlug', placeholder='your-workspace')
                     .security-note
                         i.fas.fa-shield-halved(aria-hidden='true')
-                        span Do not paste a Plane API key here. Configure it only in the relay's root-owned environment file.
-                    button.primary-action(type='submit', [disabled]='saving') {{saving ? 'Saving…' : 'Save relay settings'}}
+                        span Keep the Plane API key in the relay’s protected environment, never in this app.
+                    button.action-button.primary(type='submit', [disabled]='saving') {{saving ? 'Saving…' : 'Save relay settings'}}
+
+        footer.terminal-drawer(*ngIf='view === "project" && selectedProject', [class.open]='terminalDrawerOpen')
+            button.drawer-heading(type='button', (click)='terminalDrawerOpen = !terminalDrawerOpen')
+                i.fas.fa-terminal(aria-hidden='true')
+                strong Terminal
+                span {{selectedProject.name}} · {{selectedProject.connections[0]?.label || 'No connection selected'}}
+                small {{selectedProject.connections[0]?.status?.tmuxSession ? 'tmux ' + selectedProject.connections[0]?.status?.tmuxSession : selectedProject.connections[0]?.status?.workingDirectory || ''}}
+                i.fas([class.fa-chevron-up]='!terminalDrawerOpen', [class.fa-chevron-down]='terminalDrawerOpen', aria-hidden='true')
+            .drawer-content(*ngIf='terminalDrawerOpen')
+                button.drawer-connection(*ngFor='let item of selectedProject.connections; trackBy: trackByConnection', type='button', (click)='openConnection(item)')
+                    span.connection-dot([class.live]='item.status.state === "running"')
+                    span
+                        strong {{item.label}}
+                        small {{item.status.workingDirectory || item.status.tmuxSession || item.status.detail}}
+                    span {{item.liveItem ? 'Focus' : 'Open'}}
+                .card-empty(*ngIf='selectedProject.connections.length === 0') Add a saved connection in the project registry.
 
     .command-backdrop(*ngIf='commandPaletteOpen', (mousedown)='commandPaletteOpen = false')
         section.command-palette(role='dialog', aria-modal='true', aria-label='Command palette', (mousedown)='$event.stopPropagation()')
             label.command-search
                 i.fas.fa-search(aria-hidden='true')
-                input.master-command-input(
-                    type='search',
-                    [(ngModel)]='commandQuery',
-                    placeholder='Search projects, servers, tmux, folders or commands',
-                    aria-label='Search projects, servers, folders and commands'
-                )
+                input.master-command-input(type='search', [(ngModel)]='commandQuery', placeholder='Search projects, servers, tmux, folders or commands', aria-label='Search projects, servers, folders and commands')
                 kbd ESC
             .command-results
-                button.command-result(
-                    *ngFor='let result of searchResults; trackBy: trackBySearchResult',
-                    type='button',
-                    (click)='chooseSearchResult(result)'
-                )
+                button.command-result(*ngFor='let result of searchResults; trackBy: trackBySearchResult', type='button', (click)='chooseSearchResult(result)')
                     span.result-icon
-                        i.fas([class]='"fas " + result.icon', aria-hidden='true')
+                        i.fas([class]="'fas ' + result.icon", aria-hidden='true')
                     span.result-copy
                         strong {{result.label}}
                         small {{result.detail}}
                     span.result-kind {{result.kind}}
-                .command-empty(*ngIf='searchResults.length === 0') No project, server, folder or command matched.
+                .card-empty(*ngIf='searchResults.length === 0') No project, server, folder or command matched.
 
     .modal-backdrop(*ngIf='editorOpen', (mousedown)='editorOpen = false')
         form.project-editor(role='dialog', aria-modal='true', aria-label='Edit project registry', (mousedown)='$event.stopPropagation()', (ngSubmit)='saveProject()')
@@ -405,7 +483,8 @@
                 span
                     small PROJECT REGISTRY
                     strong {{selectedProject?.name}}
-                button.close-editor(type='button', aria-label='Close project editor', (click)='editorOpen = false') &times;
+                button.icon-button(type='button', aria-label='Close project editor', (click)='editorOpen = false')
+                    i.fas.fa-xmark(aria-hidden='true')
             .editor-body
                 .editor-grid
                     label.field-label
@@ -427,7 +506,7 @@
                     input(type='text', name='description', [(ngModel)]='draft.description', maxlength='2000', placeholder='What this project does')
                 label.field-label
                     span Founder notes
-                    textarea(name='notes', [(ngModel)]='draft.notes', rows='5', maxlength='20000', placeholder='Current focus, decisions and next action')
+                    textarea(name='notes', [(ngModel)]='draft.notes', rows='4', maxlength='20000', placeholder='Current focus, decisions and next action')
                 .editor-grid.four
                     label.field-label
                         span Total work
@@ -448,6 +527,19 @@
                     label.field-label
                         span Plane identifier
                         input(type='text', name='planeIdentifier', [(ngModel)]='draft.planeIdentifier', placeholder='MS')
+                .editor-grid
+                    label.field-label
+                        span Monthly revenue
+                        input(type='number', name='revenueCurrent', [(ngModel)]='draft.revenueCurrent', min='0')
+                    label.field-label
+                        span Currency
+                        input(type='text', name='revenueCurrency', [(ngModel)]='draft.revenueCurrency', maxlength='3', placeholder='USD')
+                label.field-label
+                    span Revenue source
+                    input(type='text', name='revenueSource', [(ngModel)]='draft.revenueSource', maxlength='120', placeholder='Stripe, billing database, manual')
+                label.field-label
+                    span Revenue history · oldest to newest
+                    input(type='text', name='revenueHistory', [(ngModel)]='draft.revenueHistory', placeholder='5200, 5600, 6100, …')
             .editor-actions
-                button.secondary-action(type='button', (click)='editorOpen = false') Cancel
-                button.primary-action(type='submit', [disabled]='saving') {{saving ? 'Saving…' : 'Save project'}}
+                button.action-button(type='button', (click)='editorOpen = false') Cancel
+                button.action-button.primary(type='submit', [disabled]='saving') {{saving ? 'Saving…' : 'Save project'}}

@@ -2,6 +2,8 @@
 
 ## Aamir Terminal application identity
 
+Version `1.0.236-aamir.31` rebuilds **Master Workspace** to match the supplied founder-dashboard design. A fixed project rail groups every saved and live project by attention level, opens MamaSign or the first available project as the default detail page, and keeps global project, knowledge, relay and registry navigation visible. Project pages now have Summary, Work items, Knowledge, Connections, Commands and Activity sections; revenue snapshots and history, bounded work-item details and registry fields persist in the existing Aamir Terminal profile. Saved servers remain offline until clicked, including the bottom terminal drawer and new-feature connection action. Reused tag, chart and currency display data is cached so Angular change detection does not repeatedly allocate it while terminal state updates arrive.
+
 The current custom app is installed as **Aamir Terminal.app**, with bundle identifier `com.aamirmursleen.terminal` and Electron package product name `Aamir Terminal`. Both identities differ from stock Tabby; changing only the `.app` filename did not separate the running instance or profile.
 
 Its profile is `~/Library/Application Support/Aamir Terminal`. On 2026-09-14, the saved config and local/session storage were copied from the existing `tabby` profile without changing the original. This is a snapshot of saved state, not a transfer of running terminal processes. Subsequent profile changes are independent.

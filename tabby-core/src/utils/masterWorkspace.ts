@@ -2,12 +2,35 @@ import type { ConnectionProject, ConnectionProjectItem, ConnectionPriority } fro
 
 export type MasterWorkspaceKnowledgeStatus = 'fresh'|'aging'|'stale'|'conflict'|'missing'|'unknown'
 export type MasterWorkspacePlaneStatus = 'live'|'offline'|'failing'|'unmapped'
+export type MasterWorkspaceWorkItemState = 'backlog'|'todo'|'in_progress'|'done'|'cancelled'|'blocked'
+export type MasterWorkspaceWorkItemPriority = 'urgent'|'high'|'medium'|'low'|'none'
+
+export interface MasterWorkspaceWorkItem {
+    id: string
+    title: string
+    state: MasterWorkspaceWorkItemState
+    priority: MasterWorkspaceWorkItemPriority
+    assignee?: string
+    module?: string
+    dueDate?: string
+    blockedBy?: string
+}
 
 export interface MasterWorkspaceWorkSummary {
     total: number
     completed: number
     blocked: number
     overdue: number
+    items?: MasterWorkspaceWorkItem[]
+}
+
+export interface MasterWorkspaceRevenueSummary {
+    currency: string
+    currentMonthly: number
+    history: { month: string, amount: number }[]
+    status: 'live'|'manual'|'stale'|'unmapped'
+    source?: string
+    updatedAt?: string
 }
 
 export interface MasterWorkspaceProjectMetadata {
@@ -15,6 +38,7 @@ export interface MasterWorkspaceProjectMetadata {
     description?: string
     notes?: string
     work?: MasterWorkspaceWorkSummary
+    revenue?: MasterWorkspaceRevenueSummary
     knowledge?: {
         path: string
         status: MasterWorkspaceKnowledgeStatus
@@ -38,7 +62,7 @@ export interface MasterWorkspaceAttentionReason {
 }
 
 export interface MasterWorkspaceProject<T = any> extends ConnectionProject<T> {
-    metadata: Required<Pick<MasterWorkspaceProjectMetadata, 'description'|'notes'|'work'|'knowledge'|'plane'|'links'|'health'>> & Pick<MasterWorkspaceProjectMetadata, 'lastActivityAt'>
+    metadata: Required<Pick<MasterWorkspaceProjectMetadata, 'description'|'notes'|'work'|'revenue'|'knowledge'|'plane'|'links'|'health'>> & Pick<MasterWorkspaceProjectMetadata, 'lastActivityAt'>
     progress: number
     openWork: number
     attention: {
@@ -155,12 +179,64 @@ export function normalizeMasterWorkspaceMetadata (value: unknown): MasterWorkspa
 
     if (input.work && typeof input.work === 'object') {
         const total = count(input.work.total)
+        const states = new Set<MasterWorkspaceWorkItemState>(['backlog', 'todo', 'in_progress', 'done', 'cancelled', 'blocked'])
+        const priorities = new Set<MasterWorkspaceWorkItemPriority>(['urgent', 'high', 'medium', 'low', 'none'])
+        const items: MasterWorkspaceWorkItem[] = Array.isArray(input.work.items)
+            ? input.work.items.slice(0, 250).flatMap(item => {
+                const id = cleanText(item?.id, 80)
+                const title = cleanText(item?.title, 500)
+                if (!id || !title) { return [] }
+                const normalized: MasterWorkspaceWorkItem = {
+                    id,
+                    title,
+                    state: states.has(item.state) ? item.state : 'todo',
+                    priority: priorities.has(item.priority) ? item.priority : 'none',
+                }
+                const assignee = cleanText(item.assignee, 120)
+                const module = cleanText(item.module, 120)
+                const blockedBy = cleanText(item.blockedBy, 120)
+                const dueDate = cleanText(item.dueDate, 64)
+                if (assignee) { normalized.assignee = assignee }
+                if (module) { normalized.module = module }
+                if (blockedBy) { normalized.blockedBy = blockedBy }
+                if (dueDate && Number.isFinite(Date.parse(dueDate))) { normalized.dueDate = dueDate }
+                return [normalized]
+            })
+            : []
         result.work = {
             total,
             completed: Math.min(count(input.work.completed), total),
             blocked: Math.min(count(input.work.blocked), total),
             overdue: Math.min(count(input.work.overdue), total),
         }
+        if (items.length) { result.work.items = items }
+    }
+
+    if (input.revenue && typeof input.revenue === 'object') {
+        const amount = (inputAmount: unknown): number => Number.isFinite(inputAmount)
+            ? Math.min(1_000_000_000_000, Math.max(0, Number(inputAmount)))
+            : 0
+        const currencyInput = typeof input.revenue.currency === 'string'
+            ? input.revenue.currency.trim().toUpperCase()
+            : ''
+        const currency = /^[A-Z]{3}$/.test(currencyInput) ? currencyInput : 'USD'
+        const statuses = new Set<MasterWorkspaceRevenueSummary['status']>(['live', 'manual', 'stale', 'unmapped'])
+        const revenue: MasterWorkspaceRevenueSummary = {
+            currency,
+            currentMonthly: amount(input.revenue.currentMonthly),
+            history: Array.isArray(input.revenue.history)
+                ? input.revenue.history.slice(-12).flatMap(entry => {
+                    const month = cleanText(entry?.month, 24)
+                    return month ? [{ month, amount: amount(entry?.amount) }] : []
+                })
+                : [],
+            status: statuses.has(input.revenue.status) ? input.revenue.status : 'unmapped',
+        }
+        const source = cleanText(input.revenue.source, 120)
+        const updatedAt = cleanText(input.revenue.updatedAt, 64)
+        if (source) { revenue.source = source }
+        if (updatedAt && Number.isFinite(Date.parse(updatedAt))) { revenue.updatedAt = updatedAt }
+        result.revenue = revenue
     }
 
     if (input.knowledge && typeof input.knowledge === 'object') {
@@ -232,6 +308,9 @@ export function buildMasterWorkspaceProjects<T> (
         const saved = normalizeMasterWorkspaceMetadata(metadataByID[project.id])
         const priority = saved.priority ?? project.priority
         const work = saved.work ?? { total: 0, completed: 0, blocked: 0, overdue: 0 }
+        const revenue = saved.revenue ?? {
+            currency: 'USD', currentMonthly: 0, history: [], status: 'unmapped' as const,
+        }
         const knowledge = saved.knowledge ?? { path: '/aamir', status: 'unknown' as MasterWorkspaceKnowledgeStatus }
         const plane = saved.plane ?? { status: 'unmapped' as MasterWorkspacePlaneStatus }
         const health = saved.health ?? 'unknown'
@@ -251,6 +330,7 @@ export function buildMasterWorkspaceProjects<T> (
             description: saved.description ?? descriptions[project.id] ?? '',
             notes: saved.notes ?? '',
             work,
+            revenue,
             knowledge,
             plane,
             links: saved.links ?? [],

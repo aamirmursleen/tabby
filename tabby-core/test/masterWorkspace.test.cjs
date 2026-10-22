@@ -92,6 +92,32 @@ test('saved registry priority overrides a derived catalog priority after restart
     assert.equal(mama.attention.reasons.some(reason => reason.kind === 'priority'), false)
 })
 
+test('normalizes bounded work items and twelve months of revenue without trusting malformed values', () => {
+    const metadata = normalizeMasterWorkspaceMetadata({
+        work: {
+            total: 3, completed: 1, blocked: 1, overdue: 0,
+            items: [
+                { id: 'MS-21', title: 'Fix onboarding', state: 'in_progress', priority: 'high', assignee: 'Aamir' },
+                { id: '', title: 'Missing identifier', state: 'done' },
+                { id: 'MS-22', title: 'Bad state', state: 'not-a-state' },
+            ],
+        },
+        revenue: {
+            currency: 'usd', currentMonthly: 8420.75, status: 'live', source: 'Stripe',
+            history: Array.from({ length: 14 }, (_, index) => ({ month: `2026-${index + 1}`, amount: index * 100 })),
+        },
+    })
+
+    assert.equal(metadata.work.items.length, 2)
+    assert.deepEqual(copy(metadata.work.items[0]), {
+        id: 'MS-21', title: 'Fix onboarding', state: 'in_progress', priority: 'high', assignee: 'Aamir',
+    })
+    assert.equal(metadata.work.items[1].state, 'todo')
+    assert.equal(metadata.revenue.currency, 'USD')
+    assert.equal(metadata.revenue.currentMonthly, 8420.75)
+    assert.equal(metadata.revenue.history.length, 12)
+})
+
 test('command search covers projects, connections, tmux names, folders and actions', () => {
     const projects = buildMasterWorkspaceProjects(connections, {}, Date.now())
     assert.deepEqual(copy(buildMasterWorkspaceSearchResults(projects, 'mamasign-queue').map(result => result.label)), ['Queue worker'])
@@ -146,7 +172,11 @@ test('the dashboard exposes real project navigation and command palette controls
     const template = fs.readFileSync(path.resolve(__dirname, '../src/components/masterWorkspace.component.pug'), 'utf8')
     assert.match(template, /Founder command center/)
     assert.match(template, /All projects/)
-    assert.match(template, /Open terminal/)
+    assert.match(template, /Summary/)
+    assert.match(template, /Work items/)
+    assert.match(template, /Revenue/)
+    assert.match(template, /Sync & relay/)
+    assert.match(template, /Open as tab/)
     assert.match(template, /Knowledge · \/aamir/)
     assert.match(template, /aria-label='Search projects, servers, folders and commands'/)
     assert.match(template, /Save project/)

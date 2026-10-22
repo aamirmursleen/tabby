@@ -12,6 +12,7 @@ import {
 import { MasterWorkspaceService, MasterWorkspaceSettings } from '../services/masterWorkspace.service'
 
 type WorkspaceView = 'overview'|'project'|'work'|'knowledge'|'connections'|'settings'
+type ProjectSection = 'summary'|'work'|'knowledge'|'connections'|'commands'|'activity'
 
 interface ProjectDraft {
     priority: number
@@ -24,6 +25,10 @@ interface ProjectDraft {
     health: 'healthy'|'degraded'|'down'|'unknown'
     knowledgePath: string
     planeIdentifier: string
+    revenueCurrency: string
+    revenueCurrent: number
+    revenueSource: string
+    revenueHistory: string
 }
 
 @Component({
@@ -40,6 +45,8 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
     view: WorkspaceView = 'overview'
     projects: MasterWorkspaceProject<BaseTabComponent>[] = []
     selectedProject: MasterWorkspaceProject<BaseTabComponent>|null = null
+    projectSection: ProjectSection = 'summary'
+    terminalDrawerOpen = false
     projectQuery = ''
     commandQuery = ''
     commandPaletteOpen = false
@@ -50,6 +57,17 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
     status = ''
     draft: ProjectDraft = this.emptyDraft()
     settingsDraft: MasterWorkspaceSettings = { relayUrl: '', workspaceSlug: '' }
+    private readonly moneyFormatters = new Map<string, Intl.NumberFormat>()
+    private readonly revenueBarCache = new WeakMap<MasterWorkspaceProject<BaseTabComponent>, { month: string, amount: number, height: number }[]>()
+    private readonly projectTagCache = new WeakMap<MasterWorkspaceProject<BaseTabComponent>, string[]>()
+    private readonly projectTagCatalog: Partial<Record<string, string[]>> = {
+        mamasign: ['SuperAdmin', 'Reseller Admin', 'Whitelabel Customer', 'API'],
+        calendarjet: ['Scheduling', 'Bookings', 'Calendar'],
+        wittyform: ['Forms', 'Payments', 'Automation'],
+        hiringcat: ['Hiring', 'Candidates', 'ATS'],
+        huntcat: ['Sourcing', 'Enrichment', 'Leads'],
+        wasecret: ['WhatsApp', 'Automation'],
+    }
 
     constructor (public workspace: MasterWorkspaceService) {
         super()
@@ -108,7 +126,15 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
     }
 
     get attentionProjects (): MasterWorkspaceProject<BaseTabComponent>[] {
-        return this.projects.filter(project => project.attention.band === 'attention').slice(0, 5)
+        return this.visibleProjects.filter(project => project.attention.band === 'attention')
+    }
+
+    get watchProjects (): MasterWorkspaceProject<BaseTabComponent>[] {
+        return this.visibleProjects.filter(project => project.attention.band === 'watch')
+    }
+
+    get steadyProjects (): MasterWorkspaceProject<BaseTabComponent>[] {
+        return this.visibleProjects.filter(project => project.attention.band === 'steady')
     }
 
     showView (view: WorkspaceView): void {
@@ -121,7 +147,29 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
     openProject (project: MasterWorkspaceProject<BaseTabComponent>): void {
         this.selectedProject = project
         this.view = 'project'
+        this.projectSection = 'summary'
         this.commandPaletteOpen = false
+    }
+
+    showProjectSection (section: ProjectSection): void {
+        this.projectSection = section
+    }
+
+    openRegistry (): void {
+        if (!this.projects.length) { return }
+        const project = this.selectedProject
+            ?? this.projects.find(item => item.id === 'mamasign')
+            ?? this.projects.find(item => item.name.toLocaleLowerCase() === 'mamasign')
+            ?? this.projects[0]
+        this.openEditor(project)
+    }
+
+    scanProject (project: MasterWorkspaceProject<BaseTabComponent>): void {
+        this.openProject(project)
+        this.projectSection = 'knowledge'
+        this.status = this.workspace.settings.relayUrl
+            ? 'Project data refreshed from the local snapshot. Server scan support is waiting for the configured relay.'
+            : 'Configure Sync & relay before scanning a server. Existing local project data is still available.'
     }
 
     async openConnection (item: ConnectionProjectItem<BaseTabComponent>): Promise<void> {
@@ -146,6 +194,21 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
         await this.openConnection(connection)
     }
 
+    async openFeatureConnection (project: MasterWorkspaceProject<BaseTabComponent>): Promise<void> {
+        if (!project.connections.length || this.busyConnectionKey) { return }
+        const connection = project.connections.find(item => item.profile) ?? project.connections[0]
+        this.busyConnectionKey = connection.key
+        this.error = ''
+        try {
+            await this.workspace.launchFreshConnection(connection)
+            this.terminalSelected.emit()
+        } catch (error) {
+            this.error = error instanceof Error ? error.message : 'Could not open a feature terminal.'
+        } finally {
+            this.busyConnectionKey = null
+        }
+    }
+
     openEditor (project: MasterWorkspaceProject<BaseTabComponent>): void {
         this.selectedProject = project
         this.draft = {
@@ -159,6 +222,10 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
             health: project.metadata.health,
             knowledgePath: project.metadata.knowledge.path,
             planeIdentifier: project.metadata.plane.identifier ?? '',
+            revenueCurrency: project.metadata.revenue.currency,
+            revenueCurrent: project.metadata.revenue.currentMonthly,
+            revenueSource: project.metadata.revenue.source ?? '',
+            revenueHistory: project.metadata.revenue.history.map(entry => entry.amount).join(', '),
         }
         this.error = ''
         this.editorOpen = true
@@ -177,6 +244,7 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
             work: {
                 total: Number(this.draft.total), completed: Number(this.draft.completed),
                 blocked: Number(this.draft.blocked), overdue: Number(this.draft.overdue),
+                items: this.selectedProject.metadata.work.items,
             },
             knowledge: {
                 ...this.selectedProject.metadata.knowledge,
@@ -186,6 +254,15 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
                 ...this.selectedProject.metadata.plane,
                 identifier: this.draft.planeIdentifier,
                 status: this.draft.planeIdentifier ? this.selectedProject.metadata.plane.status : 'unmapped',
+            },
+            revenue: {
+                ...this.selectedProject.metadata.revenue,
+                currency: this.draft.revenueCurrency,
+                currentMonthly: Number(this.draft.revenueCurrent),
+                source: this.draft.revenueSource,
+                status: this.draft.revenueSource ? 'manual' : 'unmapped',
+                history: this.revenueHistoryFromDraft(this.draft.revenueHistory),
+                updatedAt: new Date().toISOString(),
             },
             lastActivityAt: new Date().toISOString(),
         }
@@ -247,6 +324,55 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
         }
     }
 
+    projectTags (project: MasterWorkspaceProject<BaseTabComponent>): string[] {
+        const cached = this.projectTagCache.get(project)
+        if (cached) { return cached }
+        const tags = this.projectTagCatalog[project.id] ?? project.connections.slice(0, 4).map(item => item.label)
+        this.projectTagCache.set(project, tags)
+        return tags
+    }
+
+    revenueBars (project: MasterWorkspaceProject<BaseTabComponent>): { month: string, amount: number, height: number }[] {
+        const cached = this.revenueBarCache.get(project)
+        if (cached) { return cached }
+        const history = project.metadata.revenue.history
+        const maximum = Math.max(1, ...history.map(entry => entry.amount))
+        const bars = history.map(entry => ({ ...entry, height: Math.max(4, Math.round(entry.amount / maximum * 74)) }))
+        this.revenueBarCache.set(project, bars)
+        return bars
+    }
+
+    revenueTotal (project: MasterWorkspaceProject<BaseTabComponent>): number {
+        return project.metadata.revenue.history.reduce((total, entry) => total + entry.amount, 0)
+    }
+
+    revenueDelta (project: MasterWorkspaceProject<BaseTabComponent>): number|null {
+        const history = project.metadata.revenue.history
+        if (history.length < 2 || history[history.length - 2].amount === 0) { return null }
+        return Math.round((history[history.length - 1].amount - history[history.length - 2].amount) / history[history.length - 2].amount * 100)
+    }
+
+    formatMoney (value: number, currency: string): string {
+        try {
+            let formatter = this.moneyFormatters.get(currency)
+            if (!formatter) {
+                formatter = new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 0 })
+                this.moneyFormatters.set(currency, formatter)
+            }
+            return formatter.format(value)
+        } catch {
+            return `${currency} ${Math.round(value).toLocaleString()}`
+        }
+    }
+
+    workStateLabel (state: string): string {
+        const labels: Partial<Record<string, string>> = {
+            in_progress: 'In progress', todo: 'Todo', backlog: 'Backlog',
+            done: 'Done', blocked: 'Blocked', cancelled: 'Cancelled',
+        }
+        return labels[state] ?? state
+    }
+
     trackByProject (_index: number, project: MasterWorkspaceProject<BaseTabComponent>): string { return project.id }
     trackByConnection (_index: number, item: ConnectionProjectItem<BaseTabComponent>): string { return item.key }
     trackBySearchResult (_index: number, item: MasterWorkspaceSearchResult<BaseTabComponent>): string { return item.key }
@@ -256,13 +382,28 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
         if (this.selectedProject) {
             this.selectedProject = this.projects.find(project => project.id === this.selectedProject?.id) ?? null
             if (!this.selectedProject && this.view === 'project') { this.view = 'overview' }
+        } else if (this.projects.length && this.view === 'overview') {
+            this.selectedProject = this.projects.find(project => project.id === 'mamasign')
+                ?? this.projects.find(project => project.name.toLocaleLowerCase() === 'mamasign')
+                ?? this.projects[0]
+            this.view = 'project'
         }
+    }
+
+    private revenueHistoryFromDraft (value: string): { month: string, amount: number }[] {
+        const amounts = value.split(',').map(item => Number(item.trim())).filter(Number.isFinite).slice(-12)
+        const now = new Date()
+        return amounts.map((amount, index) => {
+            const date = new Date(now.getFullYear(), now.getMonth() - amounts.length + index + 1, 1)
+            return { month: date.toISOString().slice(0, 7), amount: Math.max(0, amount) }
+        })
     }
 
     private emptyDraft (): ProjectDraft {
         return {
             priority: 3, description: '', notes: '', total: 0, completed: 0, blocked: 0, overdue: 0,
             health: 'unknown', knowledgePath: '/aamir', planeIdentifier: '',
+            revenueCurrency: 'USD', revenueCurrent: 0, revenueSource: '', revenueHistory: '',
         }
     }
 }
