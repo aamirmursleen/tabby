@@ -13,7 +13,53 @@ export interface MasterWorkspaceWorkItem {
     assignee?: string
     module?: string
     dueDate?: string
+    createdAt?: string
+    updatedAt?: string
     blockedBy?: string
+}
+
+export interface MasterWorkspaceWorkFilters {
+    query: string
+    status: 'all'|MasterWorkspaceWorkItemState
+    priority: 'all'|MasterWorkspaceWorkItemPriority
+    created: 'all'|'this_month'|'last_month'
+    due: 'all'|'overdue'|'today'|'next_7_days'|'this_month'|'no_due_date'
+}
+
+export interface MasterWorkspaceKanbanColumn {
+    key: MasterWorkspaceWorkItemState
+    label: string
+    items: MasterWorkspaceWorkItem[]
+}
+
+export interface PlanePortalMapping {
+    workspaceSlug: string
+    projectId?: string
+    identifier?: string
+}
+
+export function parsePlanePortalURL (value: unknown): PlanePortalMapping|null {
+    if (typeof value !== 'string' || value.length > 2048) { return null }
+    try {
+        const url = new URL(value.trim())
+        if (url.origin !== 'https://portal.whitelabel.com.pk' || url.username || url.password) { return null }
+        const segments = url.pathname.split('/').filter(Boolean).map(segment => decodeURIComponent(segment))
+        const workspaceSlug = (segments[0] ?? '').toLocaleLowerCase()
+        if (!/^[a-z0-9][a-z0-9-]{0,119}$/.test(workspaceSlug)) { return null }
+        const mapping: PlanePortalMapping = { workspaceSlug }
+        const projectsIndex = segments.findIndex(segment => segment.toLocaleLowerCase() === 'projects')
+        const projectId = projectsIndex >= 0 ? (segments[projectsIndex + 1] ?? '').toLocaleLowerCase() : ''
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(projectId)) {
+            mapping.projectId = projectId
+        }
+        const browseIndex = segments.findIndex(segment => segment.toLocaleLowerCase() === 'browse')
+        const workItemIdentifier = browseIndex >= 0 ? segments[browseIndex + 1] ?? '' : ''
+        const identifierMatch = /^([A-Za-z][A-Za-z0-9_-]{0,30})-\d+$/.exec(workItemIdentifier)
+        if (identifierMatch) { mapping.identifier = identifierMatch[1].toLocaleUpperCase() }
+        return mapping
+    } catch {
+        return null
+    }
 }
 
 export interface MasterWorkspaceWorkSummary {
@@ -358,10 +404,14 @@ export function normalizeMasterWorkspaceMetadata (value: unknown): MasterWorkspa
                 const module = cleanText(item.module, 120)
                 const blockedBy = cleanText(item.blockedBy, 120)
                 const dueDate = cleanText(item.dueDate, 64)
+                const createdAt = cleanText(item.createdAt, 64)
+                const updatedAt = cleanText(item.updatedAt, 64)
                 if (assignee) { normalized.assignee = assignee }
                 if (module) { normalized.module = module }
                 if (blockedBy) { normalized.blockedBy = blockedBy }
                 if (dueDate && Number.isFinite(Date.parse(dueDate))) { normalized.dueDate = dueDate }
+                if (createdAt && Number.isFinite(Date.parse(createdAt))) { normalized.createdAt = createdAt }
+                if (updatedAt && Number.isFinite(Date.parse(updatedAt))) { normalized.updatedAt = updatedAt }
                 return [normalized]
             })
             : []
@@ -485,7 +535,9 @@ export function mergeMasterWorkspaceRemoteSnapshot<T> (
         const merged: MasterWorkspaceProjectMetadata = { ...saved }
         if (live.work) { merged.work = live.work }
         if (live.revenue) { merged.revenue = live.revenue }
-        if (live.plane) { merged.plane = live.plane }
+        if (live.plane) {
+            merged.plane = saved.plane?.workspaceSlug ? { ...live.plane, ...saved.plane } : live.plane
+        }
         if (live.health) { merged.health = live.health }
         if (live.lastActivityAt) { merged.lastActivityAt = live.lastActivityAt }
         if (live.links?.length) {
@@ -573,6 +625,62 @@ export function buildMasterWorkspaceProjects<T> (
             delete (project as any)._activitySort
             return project
         })
+}
+
+export function filterMasterWorkspaceWorkItems (
+    items: readonly MasterWorkspaceWorkItem[],
+    filters: MasterWorkspaceWorkFilters,
+    now = new Date(),
+): MasterWorkspaceWorkItem[] {
+    const dateKey = (value: Date): string => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+    const monthKey = (value: Date): string => dateKey(value).slice(0, 7)
+    const today = dateKey(now)
+    const currentMonth = monthKey(now)
+    const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const previousMonth = monthKey(previousMonthDate)
+    const nextWeekDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7)
+    const nextWeek = dateKey(nextWeekDate)
+    const terms = filters.query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
+    const completedStates = new Set<MasterWorkspaceWorkItemState>(['done', 'cancelled'])
+
+    return items.filter(item => {
+        if (terms.length) {
+            const text = `${item.id} ${item.title} ${item.assignee ?? ''} ${item.module ?? ''}`.toLocaleLowerCase()
+            if (!terms.every(term => text.includes(term))) { return false }
+        }
+        if (filters.status !== 'all' && item.state !== filters.status) { return false }
+        if (filters.priority !== 'all' && item.priority !== filters.priority) { return false }
+        if (filters.created !== 'all') {
+            if (!item.createdAt || !Number.isFinite(Date.parse(item.createdAt))) { return false }
+            const createdMonth = monthKey(new Date(item.createdAt))
+            if (filters.created === 'this_month' && createdMonth !== currentMonth) { return false }
+            if (filters.created === 'last_month' && createdMonth !== previousMonth) { return false }
+        }
+        if (filters.due === 'all') { return true }
+        if (filters.due === 'no_due_date') { return !item.dueDate }
+        if (!item.dueDate) { return false }
+        if (filters.due === 'today') { return item.dueDate === today }
+        if (filters.due === 'this_month') { return item.dueDate.startsWith(currentMonth) }
+        if (filters.due === 'next_7_days') { return item.dueDate >= today && item.dueDate <= nextWeek }
+        return item.dueDate < today && !completedStates.has(item.state)
+    })
+}
+
+export function buildMasterWorkspaceKanban (
+    items: readonly MasterWorkspaceWorkItem[],
+): MasterWorkspaceKanbanColumn[] {
+    const columns: { key: MasterWorkspaceWorkItemState, label: string }[] = [
+        { key: 'backlog', label: 'Backlog' },
+        { key: 'todo', label: 'Todo' },
+        { key: 'in_progress', label: 'In progress' },
+        { key: 'blocked', label: 'Blocked' },
+        { key: 'done', label: 'Done' },
+        { key: 'cancelled', label: 'Cancelled' },
+    ]
+    return columns.map(column => ({
+        ...column,
+        items: items.filter(item => item.state === column.key),
+    }))
 }
 
 export function buildMasterWorkspaceSearchResults<T> (

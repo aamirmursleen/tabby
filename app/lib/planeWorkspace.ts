@@ -20,6 +20,8 @@ export interface PlaneWorkspaceWorkItem {
     assignee?: string
     module?: string
     dueDate?: string
+    createdAt?: string
+    updatedAt?: string
 }
 
 const cachedWorkItems = new Map<string, { expiresAt: number, value: PlaneWorkspaceWorkItem[] }>()
@@ -91,6 +93,10 @@ export function sanitizePlaneWorkItems (
         if (projectName) { normalized.module = projectName }
         const dueDate = text(item.target_date, 32)
         if (/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) { normalized.dueDate = dueDate }
+        const createdAt = text(item.created_at, 64)
+        const updatedAt = text(item.updated_at, 64)
+        if (createdAt && Number.isFinite(Date.parse(createdAt))) { normalized.createdAt = createdAt }
+        if (updatedAt && Number.isFinite(Date.parse(updatedAt))) { normalized.updatedAt = updatedAt }
         return [normalized]
     })
 }
@@ -162,12 +168,16 @@ async function readPlaneJSON (path: string, credential: string): Promise<unknown
     }
 }
 
-async function fetchPlaneWorkspaceWorkItems (workspaceSlug: string): Promise<PlaneWorkspaceWorkItem[]> {
+async function fetchPlaneWorkspaceWorkItems (workspaceSlug: string, projectId = ''): Promise<PlaneWorkspaceWorkItem[]> {
     const credential = await loadPlaneCredential()
-    const projects = records(await readPlaneJSON(
+    const workspaceProjects = records(await readPlaneJSON(
         `/api/v1/workspaces/${workspaceSlug}/projects/?per_page=100`,
         credential,
-    )).slice(0, MAX_PROJECTS)
+    ))
+    const projects = projectId
+        ? workspaceProjects.filter(project => text(project.id, 80).toLocaleLowerCase() === projectId).slice(0, 1)
+        : workspaceProjects.slice(0, MAX_PROJECTS)
+    if (projectId && !projects.length) { throw new Error('Plane could not find the project from this link.') }
     const items: PlaneWorkspaceWorkItem[] = []
     for (let index = 0; index < projects.length && items.length < MAX_WORK_ITEMS; index += REQUEST_CONCURRENCY) {
         const batch = projects.slice(index, index + REQUEST_CONCURRENCY)
@@ -205,22 +215,28 @@ async function fetchPlaneWorkspaceWorkItems (workspaceSlug: string): Promise<Pla
 export async function loadPlaneWorkspaceWorkItems (
     workspaceSlugValue: unknown,
     force = false,
+    projectIdValue: unknown = '',
 ): Promise<PlaneWorkspaceWorkItem[]> {
     const workspaceSlug = text(workspaceSlugValue, 120).toLocaleLowerCase()
     if (!/^[a-z0-9][a-z0-9-]{0,119}$/.test(workspaceSlug)) {
         throw new Error('Blocked an invalid Plane workspace identifier.')
     }
-    const cached = cachedWorkItems.get(workspaceSlug)
+    const projectId = text(projectIdValue, 80).toLocaleLowerCase()
+    if (projectId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(projectId)) {
+        throw new Error('Blocked an invalid Plane project identifier.')
+    }
+    const cacheKey = `${workspaceSlug}\0${projectId}`
+    const cached = cachedWorkItems.get(cacheKey)
     if (!force && cached && cached.expiresAt > Date.now()) { return cached.value }
-    const active = activeRequests.get(workspaceSlug)
+    const active = activeRequests.get(cacheKey)
     if (active) { return active }
-    const operation = fetchPlaneWorkspaceWorkItems(workspaceSlug)
-    activeRequests.set(workspaceSlug, operation)
+    const operation = fetchPlaneWorkspaceWorkItems(workspaceSlug, projectId)
+    activeRequests.set(cacheKey, operation)
     try {
         const value = await operation
-        cachedWorkItems.set(workspaceSlug, { expiresAt: Date.now() + CACHE_TTL_MS, value })
+        cachedWorkItems.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, value })
         return value
     } finally {
-        activeRequests.delete(workspaceSlug)
+        activeRequests.delete(cacheKey)
     }
 }

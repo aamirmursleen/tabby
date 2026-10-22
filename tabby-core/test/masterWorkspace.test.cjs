@@ -7,22 +7,29 @@ const { loadDeclarations } = require('../../test/helpers/source.cjs')
 const copy = value => JSON.parse(JSON.stringify(value))
 
 const {
+    buildMasterWorkspaceKanban,
     buildNafranOSWorkspaceSnapshot,
     buildMasterWorkspaceProjects,
     buildMasterWorkspaceSearchResults,
+    filterMasterWorkspaceWorkItems,
     mergeMasterWorkspaceRemoteSnapshot,
     normalizeMasterWorkspaceMetadata,
     organizeFounderProjects,
+    parsePlanePortalURL,
 } = loadDeclarations(
     'tabby-core/src/utils/masterWorkspace.ts',
     [
+        'buildMasterWorkspaceKanban',
         'buildNafranOSWorkspaceSnapshot',
         'buildMasterWorkspaceProjects',
         'buildMasterWorkspaceSearchResults',
+        'filterMasterWorkspaceWorkItems',
         'mergeMasterWorkspaceRemoteSnapshot',
         'normalizeMasterWorkspaceMetadata',
         'organizeFounderProjects',
+        'parsePlanePortalURL',
     ],
+    { URL },
 )
 
 const connections = [
@@ -125,12 +132,54 @@ test('normalizes bounded work items and twelve months of revenue without trustin
     assert.equal(metadata.revenue.history.length, 12)
 })
 
+test('filters Plane work by search, status, priority, creation month and due-date windows', () => {
+    const items = [
+        { id: 'HIRIN-49', title: 'Video demo', state: 'in_progress', priority: 'high', assignee: 'Aamir', createdAt: '2026-10-03T10:00:00Z', updatedAt: '2026-10-20T10:00:00Z', dueDate: '2026-10-24' },
+        { id: 'HIRIN-50', title: 'Pricing page', state: 'todo', priority: 'urgent', assignee: 'Sana', createdAt: '2026-09-25T10:00:00Z', updatedAt: '2026-10-21T10:00:00Z', dueDate: '2026-10-20' },
+        { id: 'HIRIN-51', title: 'Release notes', state: 'done', priority: 'medium', createdAt: '2026-10-10T10:00:00Z', updatedAt: '2026-10-22T10:00:00Z', dueDate: '2026-10-20' },
+        { id: 'HIRIN-52', title: 'Backlog idea', state: 'backlog', priority: 'none', createdAt: '2026-08-10T10:00:00Z', updatedAt: '2026-08-11T10:00:00Z' },
+    ]
+    const all = { query: '', status: 'all', priority: 'all', created: 'all', due: 'all' }
+    const now = new Date('2026-10-23T12:00:00+05:00')
+
+    assert.deepEqual(copy(filterMasterWorkspaceWorkItems(items, { ...all, query: 'video aamir' }, now).map(item => item.id)), ['HIRIN-49'])
+    assert.deepEqual(copy(filterMasterWorkspaceWorkItems(items, { ...all, status: 'todo', priority: 'urgent' }, now).map(item => item.id)), ['HIRIN-50'])
+    assert.deepEqual(copy(filterMasterWorkspaceWorkItems(items, { ...all, created: 'this_month' }, now).map(item => item.id)), ['HIRIN-49', 'HIRIN-51'])
+    assert.deepEqual(copy(filterMasterWorkspaceWorkItems(items, { ...all, created: 'last_month' }, now).map(item => item.id)), ['HIRIN-50'])
+    assert.deepEqual(copy(filterMasterWorkspaceWorkItems(items, { ...all, due: 'overdue' }, now).map(item => item.id)), ['HIRIN-50'])
+    assert.deepEqual(copy(filterMasterWorkspaceWorkItems(items, { ...all, due: 'next_7_days' }, now).map(item => item.id)), ['HIRIN-49'])
+
+    const columns = buildMasterWorkspaceKanban(items)
+    assert.deepEqual(copy(columns.map(column => [column.key, column.items.length])), [
+        ['backlog', 1], ['todo', 1], ['in_progress', 1], ['blocked', 0], ['done', 1], ['cancelled', 0],
+    ])
+})
+
+test('extracts a safe Plane mapping from pasted workspace, project and work-item links', () => {
+    assert.deepEqual(copy(parsePlanePortalURL('https://portal.whitelabel.com.pk/hiringcat/')), {
+        workspaceSlug: 'hiringcat',
+    })
+    assert.deepEqual(copy(parsePlanePortalURL('https://portal.whitelabel.com.pk/hiringcat/browse/HIRIN-49?peek=true')), {
+        workspaceSlug: 'hiringcat', identifier: 'HIRIN',
+    })
+    assert.deepEqual(copy(parsePlanePortalURL('https://portal.whitelabel.com.pk/hiringcat/projects/12345678-1234-1234-1234-123456789abc/issues/')), {
+        workspaceSlug: 'hiringcat', projectId: '12345678-1234-1234-1234-123456789abc',
+    })
+    assert.equal(parsePlanePortalURL('http://portal.whitelabel.com.pk/hiringcat/'), null)
+    assert.equal(parsePlanePortalURL('https://portal.whitelabel.com.pk.evil.test/hiringcat/'), null)
+    assert.equal(parsePlanePortalURL('https://user@portal.whitelabel.com.pk/hiringcat/'), null)
+})
+
 test('merges a bounded live Nafran OS snapshot while preserving founder registry fields', () => {
     const merged = mergeMasterWorkspaceRemoteSnapshot(connections, {
         mama: {
             priority: 1,
             description: 'Founder description stays local',
             notes: 'Private notes stay local',
+            plane: {
+                status: 'live', identifier: 'MYMAMA', workspaceSlug: 'mamasign',
+                projectId: '12345678-1234-1234-1234-123456789abc',
+            },
             revenue: { currency: 'USD', currentMonthly: 100, history: [], status: 'manual' },
         },
     }, {
@@ -164,7 +213,9 @@ test('merges a bounded live Nafran OS snapshot while preserving founder registry
     assert.equal(merged.mama.work.total, 24)
     assert.equal(merged.mama.revenue.currentMonthly, 537.04)
     assert.equal(merged.mama.revenue.status, 'live')
-    assert.equal(merged.mama.plane.identifier, 'MAMA')
+    assert.equal(merged.mama.plane.identifier, 'MYMAMA')
+    assert.equal(merged.mama.plane.workspaceSlug, 'mamasign')
+    assert.equal(merged.mama.plane.projectId, '12345678-1234-1234-1234-123456789abc')
     assert.equal(merged.mama.health, 'healthy')
     assert.deepEqual(copy(merged.mama.links), [{ label: 'Plane', url: 'https://portal.whitelabel.com.pk/mamasign/' }])
     assert.equal(merged.unknown, undefined)
@@ -247,6 +298,15 @@ test('the dashboard exposes real project navigation and command palette controls
     assert.match(template, /Last month/)
     assert.match(template, /Owner rate/)
     assert.match(template, /Sync items/)
+    assert.match(template, /Kanban/)
+    assert.match(template, /List/)
+    assert.match(template, /Created this month/)
+    assert.match(template, /Due this month/)
+    assert.match(template, /Open in Plane/)
+    assert.match(template, /Paste Plane link/)
+    assert.match(template, /Connect & sync/)
+    assert.match(template, /savePlanePortalLink\(\)/)
+    assert.match(template, /workKanbanColumns\(selectedProject\)/)
     assert.match(template, /syncRemoteData\(\)/)
     assert.match(template, /workspace\.syncSource/)
     assert.match(template, /Sync & API/)

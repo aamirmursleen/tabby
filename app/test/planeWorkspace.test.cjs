@@ -19,6 +19,7 @@ test('Plane work items are sanitized before crossing into the renderer', () => {
             id: 'item-id', sequence_id: 95, name: 'QA Test', priority: 'high',
             state: { name: 'In Progress', group: 'started' },
             assignees: [{ first_name: 'Sana', last_name: 'Mursleen', email: 'private@example.test' }],
+            created_at: '2026-10-02T08:30:00Z', updated_at: '2026-10-20T10:45:00Z',
             target_date: '2026-10-21', description_html: '<p>not returned</p>',
         }] },
     )
@@ -26,6 +27,7 @@ test('Plane work items are sanitized before crossing into the renderer', () => {
     assert.deepEqual(JSON.parse(JSON.stringify(items)), [{
         id: 'HIRE-95', title: 'QA Test', state: 'in_progress', priority: 'high',
         assignee: 'Sana Mursleen', module: 'HiringCat Roadmap', dueDate: '2026-10-21',
+        createdAt: '2026-10-02T08:30:00Z', updatedAt: '2026-10-20T10:45:00Z',
     }])
     assert.equal(JSON.stringify(items).includes('private@example.test'), false)
     assert.equal(JSON.stringify(items).includes('description_html'), false)
@@ -102,6 +104,49 @@ test('Plane work-item pagination stops after a short page even when the server s
     const items = await fetchPlaneWorkspaceWorkItems('hiringcat')
     assert.equal(items.length, 87)
     assert.equal(calls.length, 2)
+})
+
+test('Plane sync can restrict results to the project UUID found in a pasted URL', async () => {
+    const calls = []
+    const selectedID = '12345678-1234-1234-1234-123456789abc'
+    const otherID = '87654321-4321-4321-4321-cba987654321'
+    const response = value => ({
+        ok: true,
+        status: 200,
+        url: calls.at(-1),
+        headers: { get: () => null },
+        arrayBuffer: async () => encoder.encode(JSON.stringify(value)).buffer,
+    })
+    const { fetchPlaneWorkspaceWorkItems } = loadDeclarations(
+        'app/lib/planeWorkspace.ts',
+        [
+            'PLANE_ORIGIN', 'PLANE_KEYCHAIN_SERVICE', 'PLANE_KEYCHAIN_ACCOUNT',
+            'MAX_RESPONSE_BYTES', 'REQUEST_TIMEOUT_MS', 'MAX_PROJECTS',
+            'MAX_WORK_ITEMS', 'WORK_ITEMS_PER_PAGE', 'MAX_PAGES_PER_PROJECT', 'REQUEST_CONCURRENCY',
+            'record', 'records', 'text', 'normalizeState', 'normalizePriority', 'assigneeName',
+            'sanitizePlaneWorkItems', 'loadPlaneCredential', 'readPlaneJSON', 'fetchPlaneWorkspaceWorkItems',
+        ],
+        {
+            URL,
+            AbortController,
+            readKeychainCredential: async () => 'plane_api_test_key_long_enough',
+            fetch: async url => {
+                calls.push(url)
+                if (calls.length === 1) {
+                    return response({ results: [
+                        { id: otherID, name: 'Other', identifier: 'OTHER' },
+                        { id: selectedID, name: 'Selected', identifier: 'SEL' },
+                    ] })
+                }
+                return response({ results: [{ id: 'task-1', sequence_id: 7, name: 'Selected task', state: { group: 'started' } }] })
+            },
+        },
+    )
+
+    const items = await fetchPlaneWorkspaceWorkItems('hiringcat', selectedID)
+    assert.deepEqual(JSON.parse(JSON.stringify(items.map(item => item.id))), ['SEL-7'])
+    assert.equal(calls.length, 2)
+    assert.match(calls[1], new RegExp(`/projects/${selectedID}/work-items/`))
 })
 
 test('Plane rate limits return an actionable retry message', async () => {

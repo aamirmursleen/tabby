@@ -284,7 +284,7 @@ export class MasterWorkspaceService {
         this.workItemErrors.delete(project.id)
         this.changed$.next()
         try {
-            const loaded = await provider.loadWorkItems(workspaceSlug, force)
+            const loaded = await provider.loadWorkItems(workspaceSlug, force, project.metadata.plane.projectId)
             const normalized = normalizeMasterWorkspaceMetadata({
                 work: { ...project.metadata.work, items: Array.isArray(loaded) ? loaded : [] },
             }).work
@@ -310,7 +310,7 @@ export class MasterWorkspaceService {
             ? value.toLocaleLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 160)
             : ''
         for (const remote of snapshot.projects) {
-            const identities = [remote.id, remote.name, ...(remote.aliases ?? [])].map(identity).filter(Boolean)
+            const identities = [remote.id, remote.name, ...remote.aliases ?? []].map(identity).filter(Boolean)
             const cached = [...this.projectWorkItems.entries()].find(([projectID]) => identities.includes(identity(projectID)))
             if (!cached) { continue }
             const work = remote.work ?? { total: cached[1].length, completed: 0, blocked: 0, overdue: 0 }

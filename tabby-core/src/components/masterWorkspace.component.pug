@@ -262,27 +262,139 @@
                                 span
                                     strong {{selectedProject.metadata.work.completed}}/{{selectedProject.metadata.work.total || 0}}
                                     small completed
-                                button.mini-button(type='button', [disabled]='workspace.isLoadingWorkItems(selectedProject.id)', (click)='syncWorkItems()')
+                                button.mini-button(type='button', (click)='openPlaneLinkEditor()')
+                                    i.fas.fa-link(aria-hidden='true')
+                                    span {{planeWorkspaceURL(selectedProject) ? 'Change Plane link' : 'Paste Plane link'}}
+                                button.mini-button(type='button', [disabled]='!planeWorkspaceURL(selectedProject)', (click)='workspace.openLink(planeWorkspaceURL(selectedProject))')
+                                    i.fas.fa-arrow-up-right-from-square(aria-hidden='true')
+                                    span Open in Plane
+                                button.mini-button(type='button', [disabled]='!planeWorkspaceURL(selectedProject) || workspace.isLoadingWorkItems(selectedProject.id)', (click)='syncWorkItems()')
                                     i.fas([class.fa-rotate]='!workspace.isLoadingWorkItems(selectedProject.id)', [class.fa-circle-notch]='workspace.isLoadingWorkItems(selectedProject.id)', [class.fa-spin]='workspace.isLoadingWorkItems(selectedProject.id)', aria-hidden='true')
                                     span {{workspace.isLoadingWorkItems(selectedProject.id) ? 'Syncing…' : 'Sync items'}}
-                        .work-table
-                            .work-row.header
-                                span ID
-                                span Work item
-                                span Owner / module
-                                span State
-                            .work-row(*ngFor='let item of selectedProject.metadata.work.items || []')
-                                code {{item.id}}
+                        form.plane-link-panel(*ngIf='planeLinkEditorOpen', (ngSubmit)='savePlanePortalLink()')
+                            .plane-link-copy
+                                i.fas.fa-wand-magic-sparkles(aria-hidden='true')
                                 span
-                                    strong {{item.title}}
-                                    small(*ngIf='item.dueDate') Due {{item.dueDate}}
-                                span {{item.assignee || item.module || 'Unassigned'}}
-                                span.state-pill([class]='item.state') {{workStateLabel(item.state)}}
+                                    strong Paste Plane link
+                                    small Paste a workspace, project or task URL. Aamir Terminal will map it and fetch its work items.
+                            label.plane-link-input
+                                i.fas.fa-link(aria-hidden='true')
+                                input(type='url', name='planePortalLink', [(ngModel)]='planeLinkDraft', placeholder='https://portal.whitelabel.com.pk/project-name/', autocomplete='off', spellcheck='false', aria-label='Plane project or task link')
+                            .plane-link-actions
+                                span.plane-link-error(*ngIf='planeLinkError') {{planeLinkError}}
+                                button.text-action(type='button', *ngIf='planeWorkspaceURL(selectedProject)', (click)='cancelPlaneLinkEditor()') Cancel
+                                button.action-button.primary(type='submit', [disabled]='saving || !planeLinkDraft.trim()')
+                                    i.fas([class.fa-circle-notch]='saving', [class.fa-spin]='saving', [class.fa-plug-circle-check]='!saving', aria-hidden='true')
+                                    span {{saving ? 'Connecting…' : 'Connect & sync'}}
+
+                        .work-filter-bar(*ngIf='planeWorkspaceURL(selectedProject)')
+                            label.work-search
+                                i.fas.fa-search(aria-hidden='true')
+                                input(type='search', [(ngModel)]='workFilters.query', placeholder='Search tasks, IDs or owners', aria-label='Search work items')
+                            label.work-filter
+                                span Status
+                                select([(ngModel)]='workFilters.status', aria-label='Filter by status')
+                                    option(value='all') All statuses
+                                    option(value='backlog') Backlog
+                                    option(value='todo') Todo
+                                    option(value='in_progress') In progress
+                                    option(value='blocked') Blocked
+                                    option(value='done') Done
+                                    option(value='cancelled') Cancelled
+                            label.work-filter
+                                span Priority
+                                select([(ngModel)]='workFilters.priority', aria-label='Filter by priority')
+                                    option(value='all') All priorities
+                                    option(value='urgent') Urgent
+                                    option(value='high') High
+                                    option(value='medium') Medium
+                                    option(value='low') Low
+                                    option(value='none') No priority
+                            label.work-filter
+                                span Created
+                                select([(ngModel)]='workFilters.created', aria-label='Filter by creation date')
+                                    option(value='all') All time
+                                    option(value='this_month') Created this month
+                                    option(value='last_month') Created last month
+                            label.work-filter
+                                span Due
+                                select([(ngModel)]='workFilters.due', aria-label='Filter by due date')
+                                    option(value='all') Any due date
+                                    option(value='today') Due today
+                                    option(value='next_7_days') Next 7 days
+                                    option(value='this_month') Due this month
+                                    option(value='overdue') Overdue
+                                    option(value='no_due_date') No due date
+                            .work-view-actions
+                                button.text-action(type='button', *ngIf='hasActiveWorkFilters()', (click)='clearWorkFilters()') Clear
+                                .work-view-toggle(role='group', aria-label='Work item view')
+                                    button(type='button', [class.active]='workView === "kanban"', (click)='workView = "kanban"')
+                                        i.fas.fa-table-columns(aria-hidden='true')
+                                        span Kanban
+                                    button(type='button', [class.active]='workView === "list"', (click)='workView = "list"')
+                                        i.fas.fa-list(aria-hidden='true')
+                                        span List
+
+                        .work-result-summary(*ngIf='planeWorkspaceURL(selectedProject) && workspace.hasLoadedWorkItems(selectedProject.id) && !workspace.isLoadingWorkItems(selectedProject.id)')
+                            strong {{filteredWorkItems(selectedProject).length}}
+                            span of {{(selectedProject.metadata.work.items || []).length}} tasks shown
+
+                        .work-surface(*ngIf='planeWorkspaceURL(selectedProject)')
                             .card-empty(*ngIf='workspace.isLoadingWorkItems(selectedProject.id)') Loading current work items from Plane…
                             .card-empty.error-empty(*ngIf='!workspace.isLoadingWorkItems(selectedProject.id) && workspace.workItemsError(selectedProject.id)')
                                 span {{workspace.workItemsError(selectedProject.id)}}
                                 button.mini-button(type='button', (click)='syncWorkItems()') Retry
+
+                            .work-kanban(*ngIf='!workspace.isLoadingWorkItems(selectedProject.id) && !workspace.workItemsError(selectedProject.id) && workView === "kanban" && filteredWorkItems(selectedProject).length')
+                                section.kanban-column(*ngFor='let column of workKanbanColumns(selectedProject); trackBy: trackByKanbanColumn', [class]="'kanban-column state-' + column.key")
+                                    header.kanban-column-header
+                                        span.state-marker
+                                        strong {{column.label}}
+                                        small {{column.items.length}}
+                                    .kanban-column-body
+                                        article.kanban-card(*ngFor='let item of column.items; trackBy: trackByWorkItem')
+                                            .kanban-card-head
+                                                code {{item.id}}
+                                                button.icon-button(type='button', [disabled]='!planeWorkItemURL(selectedProject, item)', title='Open in Plane', aria-label='Open work item in Plane', (click)='workspace.openLink(planeWorkItemURL(selectedProject, item))')
+                                                    i.fas.fa-arrow-up-right-from-square(aria-hidden='true')
+                                            h3 {{item.title}}
+                                            .kanban-card-badges
+                                                span.priority-pill([class]="'priority-' + item.priority") {{workPriorityLabel(item.priority)}}
+                                            .kanban-card-owner
+                                                i.far.fa-user(aria-hidden='true')
+                                                span {{item.assignee || item.module || 'Unassigned'}}
+                                            .kanban-card-dates
+                                                span(*ngIf='item.createdAt', [title]="'Created ' + item.createdAt")
+                                                    i.far.fa-calendar-plus(aria-hidden='true')
+                                                    | {{formatWorkDate(item.createdAt)}}
+                                                span(*ngIf='item.dueDate', [class.overdue]='isWorkItemOverdue(item)', [title]="'Due ' + item.dueDate")
+                                                    i.far.fa-calendar-check(aria-hidden='true')
+                                                    | Due {{formatWorkDate(item.dueDate)}}
+                                        .kanban-column-empty(*ngIf='!column.items.length') No {{column.label.toLocaleLowerCase()}} tasks
+
+                            .work-table.filtered-work-table(*ngIf='!workspace.isLoadingWorkItems(selectedProject.id) && !workspace.workItemsError(selectedProject.id) && workView === "list" && filteredWorkItems(selectedProject).length')
+                                .work-row.header
+                                    span ID
+                                    span Work item
+                                    span Priority
+                                    span Owner / module
+                                    span Due
+                                    span State
+                                    span
+                                .work-row(*ngFor='let item of filteredWorkItems(selectedProject); trackBy: trackByWorkItem')
+                                    code {{item.id}}
+                                    span
+                                        strong {{item.title}}
+                                        small(*ngIf='item.createdAt') Created {{formatWorkDate(item.createdAt)}}
+                                    span.priority-pill([class]="'priority-' + item.priority") {{workPriorityLabel(item.priority)}}
+                                    span {{item.assignee || item.module || 'Unassigned'}}
+                                    span.work-due([class.overdue]='isWorkItemOverdue(item)') {{item.dueDate ? formatWorkDate(item.dueDate) : '—'}}
+                                    span.state-pill([class]='item.state') {{workStateLabel(item.state)}}
+                                    button.icon-button(type='button', [disabled]='!planeWorkItemURL(selectedProject, item)', title='Open in Plane', aria-label='Open work item in Plane', (click)='workspace.openLink(planeWorkItemURL(selectedProject, item))')
+                                        i.fas.fa-arrow-up-right-from-square(aria-hidden='true')
+
                             .card-empty(*ngIf='!workspace.isLoadingWorkItems(selectedProject.id) && workspace.hasLoadedWorkItems(selectedProject.id) && !(selectedProject.metadata.work.items || []).length') No work items are currently available in this Plane workspace.
+                            .card-empty(*ngIf='!workspace.isLoadingWorkItems(selectedProject.id) && workspace.hasLoadedWorkItems(selectedProject.id) && (selectedProject.metadata.work.items || []).length && !filteredWorkItems(selectedProject).length') No tasks match these filters.
 
                     section.section-panel(*ngIf='projectSection === "knowledge"')
                         .section-intro

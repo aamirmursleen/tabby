@@ -20,7 +20,7 @@ export class NafranOSWorkspaceSyncProvider extends MasterWorkspaceSyncProvider {
         return buildNafranOSWorkspaceSnapshot(feeds.snapshot, feeds.shopify, feeds.profile)
     }
 
-    async loadWorkItems (workspaceSlug: string, force = false): Promise<unknown> {
-        return ipcRenderer.invoke('app:load-plane-work-items', workspaceSlug, force)
+    async loadWorkItems (workspaceSlug: string, force = false, projectId = ''): Promise<unknown> {
+        return ipcRenderer.invoke('app:load-plane-work-items', workspaceSlug, force, projectId)
     }
 }

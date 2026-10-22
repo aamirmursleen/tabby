@@ -50,13 +50,14 @@ export class Application {
             return loadNafranOSWorkspaceFeeds(force)
         })
 
-        ipcMain.handle('app:load-plane-work-items', async (event, workspaceSlug, force = false) => {
+        ipcMain.handle('app:load-plane-work-items', async (event, workspaceSlug, force = false, projectId = '') => {
             const senderURL = event.senderFrame?.url ?? event.sender.getURL()
             const trustedWindow = this.windows.some(window => !window.isDestroyed() && window.webContents.id === event.sender.id)
-            if (!trustedWindow || !senderURL.startsWith('file://') || typeof workspaceSlug !== 'string' || typeof force !== 'boolean') {
+            if (!trustedWindow || !senderURL.startsWith('file://') || typeof workspaceSlug !== 'string'
+                || typeof force !== 'boolean' || typeof projectId !== 'string') {
                 throw new Error('Blocked a Plane API request from an unexpected page.')
             }
-            return loadPlaneWorkspaceWorkItems(workspaceSlug, force)
+            return loadPlaneWorkspaceWorkItems(workspaceSlug, force, projectId)
         })
 
         ipcMain.on('app:register-global-hotkey', (_event, specs) => {

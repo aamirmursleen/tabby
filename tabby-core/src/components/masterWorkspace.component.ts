@@ -4,10 +4,16 @@ import { BaseTabComponent } from './baseTab.component'
 import { BaseComponent } from './base.component'
 import { ConnectionProjectItem } from '../utils/connectionProjects'
 import {
+    buildMasterWorkspaceKanban,
     buildMasterWorkspaceSearchResults,
+    filterMasterWorkspaceWorkItems,
+    MasterWorkspaceKanbanColumn,
     MasterWorkspaceProject,
     MasterWorkspaceProjectMetadata,
     MasterWorkspaceSearchResult,
+    MasterWorkspaceWorkFilters,
+    MasterWorkspaceWorkItem,
+    parsePlanePortalURL,
 } from '../utils/masterWorkspace'
 import { MasterWorkspaceService, MasterWorkspaceSettings } from '../services/masterWorkspace.service'
 
@@ -15,6 +21,7 @@ type WorkspaceView = 'overview'|'project'|'work'|'knowledge'|'connections'|'sett
 type ProjectSection = 'summary'|'work'|'knowledge'|'connections'|'commands'|'activity'
 type RevenuePeriod = 'current'|'previous'
 type KnowledgeEditorMode = 'note'|'link'|null
+type WorkView = 'kanban'|'list'
 
 interface ProjectDraft {
     priority: number
@@ -59,6 +66,8 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
     commandPaletteOpen = false
     editorOpen = false
     revenuePeriod: RevenuePeriod = 'current'
+    workView: WorkView = 'kanban'
+    workFilters: MasterWorkspaceWorkFilters = this.emptyWorkFilters()
     saving = false
     busyConnectionKey: string|null = null
     error = ''
@@ -68,10 +77,20 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
     knowledgeLinkDraft: KnowledgeLinkDraft = { label: '', url: '' }
     knowledgeEditingLinkIndex: number|null = null
     knowledgeError = ''
+    planeLinkEditorOpen = false
+    planeLinkDraft = ''
+    planeLinkError = ''
     draft: ProjectDraft = this.emptyDraft()
     settingsDraft: MasterWorkspaceSettings = { relayUrl: '', workspaceSlug: '' }
     private readonly moneyFormatters = new Map<string, Intl.NumberFormat>()
     private readonly revenueMonthLabels = new Map<string, string>()
+    private readonly workDateLabels = new Map<string, string>()
+    private readonly workViewCache = new WeakMap<MasterWorkspaceProject<BaseTabComponent>, {
+        key: string
+        items: MasterWorkspaceWorkItem[]
+        columns: MasterWorkspaceKanbanColumn[]
+    }>()
+
     private readonly revenueShareRateCache = new WeakMap<MasterWorkspaceProject<BaseTabComponent>, number|null>()
     private readonly revenueBarCache = new WeakMap<MasterWorkspaceProject<BaseTabComponent>, { month: string, amount: number, height: number }[]>()
     private readonly projectTagCache = new WeakMap<MasterWorkspaceProject<BaseTabComponent>, string[]>()
@@ -112,6 +131,9 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
                 event.preventDefault()
             } else if (this.editorOpen) {
                 this.editorOpen = false
+                event.preventDefault()
+            } else if (this.planeLinkEditorOpen) {
+                this.cancelPlaneLinkEditor()
                 event.preventDefault()
             } else if (this.knowledgeEditorMode) {
                 this.cancelKnowledgeEditor()
@@ -174,14 +196,20 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
         this.view = 'project'
         this.projectSection = 'summary'
         this.revenuePeriod = 'current'
+        this.clearWorkFilters()
         this.cancelKnowledgeEditor()
+        this.cancelPlaneLinkEditor()
         this.commandPaletteOpen = false
     }
 
     showProjectSection (section: ProjectSection): void {
         this.projectSection = section
         if (section === 'work' && this.selectedProject) {
-            void this.workspace.syncProjectWorkItems(this.selectedProject)
+            if (this.selectedProject.metadata.plane.workspaceSlug) {
+                void this.workspace.syncProjectWorkItems(this.selectedProject)
+            } else {
+                this.openPlaneLinkEditor()
+            }
         }
     }
 
@@ -419,6 +447,124 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
         await this.workspace.syncProjectWorkItems(this.selectedProject, force)
     }
 
+    openPlaneLinkEditor (): void {
+        const project = this.selectedProject
+        if (!project) { return }
+        const workspaceURL = this.planeWorkspaceURL(project)
+        const projectID = project.metadata.plane.projectId
+        this.planeLinkDraft = workspaceURL && projectID
+            ? `${workspaceURL}projects/${encodeURIComponent(projectID)}/`
+            : workspaceURL
+        this.planeLinkError = ''
+        this.planeLinkEditorOpen = true
+    }
+
+    cancelPlaneLinkEditor (): void {
+        this.planeLinkEditorOpen = false
+        this.planeLinkError = ''
+    }
+
+    async savePlanePortalLink (): Promise<void> {
+        const project = this.selectedProject
+        if (!project || this.saving) { return }
+        const mapping = parsePlanePortalURL(this.planeLinkDraft)
+        if (!mapping) {
+            this.planeLinkError = 'Paste a complete https://portal.whitelabel.com.pk project or task link.'
+            return
+        }
+        this.saving = true
+        this.planeLinkError = ''
+        this.error = ''
+        this.status = ''
+        const sameWorkspace = project.metadata.plane.workspaceSlug === mapping.workspaceSlug
+        const metadata: MasterWorkspaceProjectMetadata = {
+            ...project.metadata,
+            plane: {
+                ...project.metadata.plane,
+                status: 'live',
+                workspaceSlug: mapping.workspaceSlug,
+                projectId: mapping.projectId,
+                identifier: mapping.identifier ?? (sameWorkspace ? project.metadata.plane.identifier : undefined),
+                updatedAt: new Date().toISOString(),
+            },
+            lastActivityAt: new Date().toISOString(),
+        }
+        try {
+            await this.workspace.saveProject(project, metadata, project.priority)
+            const savedProject = this.projects.find(item => item.id === project.id)
+            if (!savedProject) { throw new Error('The project was saved but could not be reloaded.') }
+            this.selectedProject = savedProject
+            this.planeLinkEditorOpen = false
+            await this.workspace.syncProjectWorkItems(savedProject, true)
+            const syncError = this.workspace.workItemsError(savedProject.id)
+            this.status = syncError
+                ? 'Plane link saved. Use Retry after resolving the sync error below.'
+                : 'Plane project connected and work items synced'
+        } catch (error) {
+            this.planeLinkError = error instanceof Error ? error.message : 'Could not save this Plane project link.'
+        } finally {
+            this.saving = false
+        }
+    }
+
+    filteredWorkItems (project: MasterWorkspaceProject<BaseTabComponent>): MasterWorkspaceWorkItem[] {
+        return this.workViewData(project).items
+    }
+
+    workKanbanColumns (project: MasterWorkspaceProject<BaseTabComponent>): MasterWorkspaceKanbanColumn[] {
+        return this.workViewData(project).columns
+    }
+
+    clearWorkFilters (): void {
+        this.workFilters = this.emptyWorkFilters()
+    }
+
+    hasActiveWorkFilters (): boolean {
+        const filters = this.workFilters
+        return !!filters.query || filters.status !== 'all' || filters.priority !== 'all'
+            || filters.created !== 'all' || filters.due !== 'all'
+    }
+
+    planeWorkspaceURL (project: MasterWorkspaceProject<BaseTabComponent>): string {
+        const slug = project.metadata.plane.workspaceSlug ?? ''
+        return /^[a-z0-9][a-z0-9-]{0,119}$/.test(slug)
+            ? `https://portal.whitelabel.com.pk/${encodeURIComponent(slug)}/`
+            : ''
+    }
+
+    planeWorkItemURL (
+        project: MasterWorkspaceProject<BaseTabComponent>,
+        item: MasterWorkspaceWorkItem,
+    ): string {
+        const workspaceURL = this.planeWorkspaceURL(project)
+        return workspaceURL && /^[A-Za-z0-9_-]{1,80}$/.test(item.id)
+            ? `${workspaceURL}browse/${encodeURIComponent(item.id)}`
+            : workspaceURL
+    }
+
+    formatWorkDate (value: string|undefined): string {
+        if (!value) { return 'No date' }
+        const cached = this.workDateLabels.get(value)
+        if (cached) { return cached }
+        const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00` : value)
+        const label = Number.isFinite(date.getTime())
+            ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' })
+            : value
+        this.workDateLabels.set(value, label)
+        return label
+    }
+
+    isWorkItemOverdue (item: MasterWorkspaceWorkItem): boolean {
+        if (!item.dueDate || item.state === 'done' || item.state === 'cancelled') { return false }
+        const now = new Date()
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+        return item.dueDate < today
+    }
+
+    workPriorityLabel (priority: MasterWorkspaceWorkItem['priority']): string {
+        return priority === 'none' ? 'No priority' : priority[0].toLocaleUpperCase() + priority.slice(1)
+    }
+
     openCommandPalette (): void {
         this.commandQuery = ''
         this.commandPaletteOpen = true
@@ -557,6 +703,8 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
     trackByProject (_index: number, project: MasterWorkspaceProject<BaseTabComponent>): string { return project.id }
     trackByConnection (_index: number, item: ConnectionProjectItem<BaseTabComponent>): string { return item.key }
     trackBySearchResult (_index: number, item: MasterWorkspaceSearchResult<BaseTabComponent>): string { return item.key }
+    trackByWorkItem (_index: number, item: MasterWorkspaceWorkItem): string { return item.id }
+    trackByKanbanColumn (_index: number, column: MasterWorkspaceKanbanColumn): string { return column.key }
 
     private updateProjects (): void {
         this.projects = this.workspace.projects
@@ -585,6 +733,23 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
         if (index < 0) { index = history.length - (period === 'current' ? 1 : 2) }
         if (index < 0) { return null }
         return { entry: history[index], index }
+    }
+
+    private workViewData (project: MasterWorkspaceProject<BaseTabComponent>): {
+        key: string
+        items: MasterWorkspaceWorkItem[]
+        columns: MasterWorkspaceKanbanColumn[]
+    } {
+        const now = new Date()
+        const today = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`
+        const filters = this.workFilters
+        const key = [filters.query, filters.status, filters.priority, filters.created, filters.due, today].join('\0')
+        const cached = this.workViewCache.get(project)
+        if (cached?.key === key) { return cached }
+        const items = filterMasterWorkspaceWorkItems(project.metadata.work.items ?? [], filters, now)
+        const value = { key, items, columns: buildMasterWorkspaceKanban(items) }
+        this.workViewCache.set(project, value)
+        return value
     }
 
     private revenueHistoryFromDraft (value: string): { month: string, amount: number }[] {
@@ -622,5 +787,9 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
             health: 'unknown', knowledgePath: '/aamir', planeIdentifier: '',
             revenueCurrency: 'USD', revenueCurrent: 0, revenueSource: '', revenueHistory: '',
         }
+    }
+
+    private emptyWorkFilters (): MasterWorkspaceWorkFilters {
+        return { query: '', status: 'all', priority: 'all', created: 'all', due: 'all' }
     }
 }
