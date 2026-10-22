@@ -1,4 +1,5 @@
 import type { ConnectionProject, ConnectionProjectItem, ConnectionPriority } from './connectionProjects'
+import type { FounderBriefingResult } from './founderBriefing'
 
 export type MasterWorkspaceKnowledgeStatus = 'fresh'|'aging'|'stale'|'conflict'|'missing'|'unknown'
 export type MasterWorkspacePlaneStatus = 'live'|'offline'|'failing'|'unmapped'
@@ -98,6 +99,15 @@ export interface MasterWorkspaceProjectMetadata {
         updatedAt?: string
     }
     links?: { label: string, url: string }[]
+    owner?: {
+        name: string
+        channel: string
+    }
+    repository?: {
+        localPath?: string
+        githubURL?: string
+    }
+    briefing?: FounderBriefingResult
     health?: 'healthy'|'degraded'|'down'|'unknown'
     lastActivityAt?: string
 }
@@ -109,7 +119,7 @@ export interface MasterWorkspaceAttentionReason {
 }
 
 export interface MasterWorkspaceProject<T = any> extends ConnectionProject<T> {
-    metadata: Required<Pick<MasterWorkspaceProjectMetadata, 'description'|'notes'|'work'|'revenue'|'knowledge'|'plane'|'links'|'health'>> & Pick<MasterWorkspaceProjectMetadata, 'lastActivityAt'>
+    metadata: Required<Pick<MasterWorkspaceProjectMetadata, 'description'|'notes'|'work'|'revenue'|'knowledge'|'plane'|'links'|'owner'|'repository'|'health'>> & Pick<MasterWorkspaceProjectMetadata, 'briefing'|'lastActivityAt'>
     progress: number
     openWork: number
     attention: {
@@ -376,6 +386,70 @@ export function normalizeMasterWorkspaceMetadata (value: unknown): MasterWorkspa
         return cleaned || undefined
     }
     const count = (number: unknown): number => Number.isFinite(number) ? Math.max(0, Math.floor(Number(number))) : 0
+    const normalizeFounderFields = (): MasterWorkspaceProjectMetadata => {
+        const founder: MasterWorkspaceProjectMetadata = {}
+        if (input.owner && typeof input.owner === 'object' && !Array.isArray(input.owner)) {
+            const name = cleanText(input.owner.name, 120)
+            const channel = cleanText(input.owner.channel, 40)
+            if (name ?? channel) { founder.owner = { name: name ?? '', channel: channel ?? '' } }
+        }
+
+        if (input.repository && typeof input.repository === 'object' && !Array.isArray(input.repository)) {
+            const localPathValue = typeof input.repository.localPath === 'string' && !/[\0\r\n]/.test(input.repository.localPath)
+                ? input.repository.localPath.trim().slice(0, 4096)
+                : ''
+            const githubURLValue = cleanText(input.repository.githubURL, 2048)
+            const repository: NonNullable<MasterWorkspaceProjectMetadata['repository']> = {}
+            if (localPathValue.startsWith('/')) { repository.localPath = localPathValue }
+            if (githubURLValue && /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/?$/i.test(githubURLValue)) {
+                repository.githubURL = githubURLValue.replace(/\/$/, '')
+            }
+            if (repository.localPath ?? repository.githubURL) { founder.repository = repository }
+        }
+
+        if (input.briefing && typeof input.briefing === 'object' && !Array.isArray(input.briefing)) {
+            const generatedAt = cleanText(input.briefing.generatedAt, 64)
+            const source = input.briefing.source === 'codex' ? 'codex' : input.briefing.source === 'local' ? 'local' : null
+            const boundedList = (listValue: unknown): string[] => Array.isArray(listValue)
+                ? listValue.slice(0, 6).flatMap(item => {
+                    const cleaned = cleanText(item, 500)
+                    return cleaned ? [cleaned] : []
+                })
+                : []
+            const headline = cleanText(input.briefing.headline, 300)
+            const messageText = cleanText(input.briefing.message?.text, 1600)
+            if (generatedAt && Number.isFinite(Date.parse(generatedAt)) && source && headline && messageText) {
+                const evidenceInput = input.briefing.evidence && typeof input.briefing.evidence === 'object'
+                    ? input.briefing.evidence
+                    : {}
+                const repository = cleanText(evidenceInput.repository, 2048)
+                const latestCommitAt = cleanText(evidenceInput.latestCommitAt, 64)
+                founder.briefing = {
+                    generatedAt,
+                    source,
+                    headline,
+                    progress: boundedList(input.briefing.progress),
+                    pending: boundedList(input.briefing.pending),
+                    risks: boundedList(input.briefing.risks),
+                    growth: boundedList(input.briefing.growth),
+                    message: {
+                        recipient: cleanText(input.briefing.message?.recipient, 120) ?? 'Project owner',
+                        channel: cleanText(input.briefing.message?.channel, 40) ?? 'Message',
+                        text: messageText,
+                    },
+                    evidence: {
+                        planeTaskCount: Math.min(250, count(evidenceInput.planeTaskCount)),
+                        gitCommitCount: Math.min(24, count(evidenceInput.gitCommitCount)),
+                    },
+                }
+                if (repository) { founder.briefing.evidence.repository = repository }
+                if (latestCommitAt && Number.isFinite(Date.parse(latestCommitAt))) {
+                    founder.briefing.evidence.latestCommitAt = latestCommitAt
+                }
+            }
+        }
+        return founder
+    }
 
     const description = cleanText(input.description, 2000)
     const notes = cleanText(input.notes, 20000)
@@ -485,6 +559,8 @@ export function normalizeMasterWorkspaceMetadata (value: unknown): MasterWorkspa
         })
         result.links = links.filter((link, index) => links.findIndex(candidate => candidate.url === link.url) === index)
     }
+
+    Object.assign(result, normalizeFounderFields())
 
     if (['healthy', 'degraded', 'down', 'unknown'].includes(input.health)) {
         result.health = input.health
@@ -605,6 +681,9 @@ export function buildMasterWorkspaceProjects<T> (
             knowledge,
             plane,
             links: saved.links ?? [],
+            owner: saved.owner ?? { name: '', channel: '' },
+            repository: saved.repository ?? {},
+            briefing: saved.briefing,
             health,
             lastActivityAt: saved.lastActivityAt,
         }

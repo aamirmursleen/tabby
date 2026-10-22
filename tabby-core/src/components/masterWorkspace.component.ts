@@ -17,8 +17,8 @@ import {
 } from '../utils/masterWorkspace'
 import { MasterWorkspaceService, MasterWorkspaceSettings } from '../services/masterWorkspace.service'
 
-type WorkspaceView = 'overview'|'project'|'work'|'knowledge'|'connections'|'settings'
-type ProjectSection = 'summary'|'work'|'knowledge'|'connections'|'commands'|'activity'
+type WorkspaceView = 'briefing'|'overview'|'project'|'work'|'knowledge'|'connections'|'settings'
+type ProjectSection = 'summary'|'briefing'|'messages'|'work'|'knowledge'|'connections'|'commands'|'activity'
 type RevenuePeriod = 'current'|'previous'
 type KnowledgeEditorMode = 'note'|'link'|null
 type WorkView = 'kanban'|'list'
@@ -38,6 +38,10 @@ interface ProjectDraft {
     revenueCurrent: number
     revenueSource: string
     revenueHistory: string
+    ownerName: string
+    ownerChannel: string
+    repositoryPath: string
+    githubURL: string
 }
 
 interface KnowledgeLinkDraft {
@@ -56,7 +60,7 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
     @Output() connectionsRequested = new EventEmitter<void>()
     @Output() snippetsRequested = new EventEmitter<void>()
 
-    view: WorkspaceView = 'overview'
+    view: WorkspaceView = 'briefing'
     projects: MasterWorkspaceProject<BaseTabComponent>[] = []
     selectedProject: MasterWorkspaceProject<BaseTabComponent>|null = null
     projectSection: ProjectSection = 'summary'
@@ -69,6 +73,7 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
     workView: WorkView = 'kanban'
     workFilters: MasterWorkspaceWorkFilters = this.emptyWorkFilters()
     saving = false
+    agentLaunching = false
     busyConnectionKey: string|null = null
     error = ''
     status = ''
@@ -151,6 +156,7 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
     get totalCompleted (): number { return this.projects.reduce((total, project) => total + project.metadata.work.completed, 0) }
     get totalOpen (): number { return this.projects.reduce((total, project) => total + project.openWork, 0) }
     get mappedProjectCount (): number { return this.projects.filter(project => project.metadata.plane.status !== 'unmapped').length }
+    get briefedProjectCount (): number { return this.projects.filter(project => !!project.metadata.briefing).length }
 
     get visibleProjects (): MasterWorkspaceProject<BaseTabComponent>[] {
         const terms = this.projectQuery.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
@@ -284,6 +290,10 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
             revenueCurrent: project.metadata.revenue.currentMonthly,
             revenueSource: project.metadata.revenue.source ?? '',
             revenueHistory: project.metadata.revenue.history.map(entry => entry.amount).join(', '),
+            ownerName: project.metadata.owner.name,
+            ownerChannel: project.metadata.owner.channel,
+            repositoryPath: project.metadata.repository.localPath ?? '',
+            githubURL: project.metadata.repository.githubURL ?? '',
         }
         this.error = ''
         this.editorOpen = true
@@ -321,6 +331,14 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
                 status: this.draft.revenueSource ? 'manual' : 'unmapped',
                 history: this.revenueHistoryFromDraft(this.draft.revenueHistory),
                 updatedAt: new Date().toISOString(),
+            },
+            owner: {
+                name: this.draft.ownerName,
+                channel: this.draft.ownerChannel,
+            },
+            repository: {
+                localPath: this.draft.repositoryPath,
+                githubURL: this.draft.githubURL,
             },
             lastActivityAt: new Date().toISOString(),
         }
@@ -440,6 +458,66 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
             await this.workspace.syncProjectWorkItems(this.selectedProject, true)
         }
         if (!this.workspace.syncError) { this.status = 'Project work and revenue synced from Nafran OS' }
+    }
+
+    async runFounderBriefing (): Promise<void> {
+        if (this.workspace.briefingLoading) { return }
+        this.error = ''
+        this.status = ''
+        try {
+            const source = await this.workspace.runFounderBriefing(true)
+            this.status = source === 'codex'
+                ? 'Daily founder briefing updated by Codex'
+                : 'Briefing updated from local evidence. Codex was unavailable; details are shown below.'
+        } catch (error) {
+            this.error = error instanceof Error ? error.message : 'Could not create the founder briefing.'
+        }
+    }
+
+    async launchAIWorkspaceAgent (): Promise<void> {
+        if (this.agentLaunching) { return }
+        this.agentLaunching = true
+        this.error = ''
+        try {
+            const state = await this.workspace.launchTabbyAgent()
+            this.status = state === 'focused' ? 'Focused the existing AI Agent tab' : 'Opened AI Agent in /tabby'
+            this.terminalSelected.emit()
+        } catch (error) {
+            this.error = error instanceof Error ? error.message : 'Could not open the AI Agent.'
+        } finally {
+            this.agentLaunching = false
+        }
+    }
+
+    openProjectBriefing (project: MasterWorkspaceProject<BaseTabComponent>): void {
+        this.openProject(project)
+        this.projectSection = 'briefing'
+    }
+
+    openProjectMessages (project: MasterWorkspaceProject<BaseTabComponent>): void {
+        this.openProject(project)
+        this.projectSection = 'messages'
+    }
+
+    async copyManagerMessage (project: MasterWorkspaceProject<BaseTabComponent>): Promise<void> {
+        const briefing = project.metadata.briefing
+        if (!briefing?.message.text) {
+            this.error = 'Run the daily briefing before copying a manager message.'
+            return
+        }
+        try {
+            await navigator.clipboard.writeText(briefing.message.text)
+            this.status = `Message for ${briefing.message.recipient} copied`
+        } catch {
+            this.error = 'Could not copy the message. Select the text and copy it manually.'
+        }
+    }
+
+    formatBriefingTime (value?: Date|string): string {
+        if (!value) { return 'Not scheduled' }
+        const date = value instanceof Date ? value : new Date(value)
+        if (!Number.isFinite(date.getTime())) { return 'Not scheduled' }
+        return date.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
     }
 
     async syncWorkItems (force = true): Promise<void> {
@@ -786,6 +864,7 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
             priority: 3, description: '', notes: '', total: 0, completed: 0, blocked: 0, overdue: 0,
             health: 'unknown', knowledgePath: '/aamir', planeIdentifier: '',
             revenueCurrency: 'USD', revenueCurrent: 0, revenueSource: '', revenueHistory: '',
+            ownerName: '', ownerChannel: 'WhatsApp', repositoryPath: '', githubURL: '',
         }
     }
 

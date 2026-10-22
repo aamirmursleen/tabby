@@ -23,4 +23,8 @@ export class NafranOSWorkspaceSyncProvider extends MasterWorkspaceSyncProvider {
     async loadWorkItems (workspaceSlug: string, force = false, projectId = ''): Promise<unknown> {
         return ipcRenderer.invoke('app:load-plane-work-items', workspaceSlug, force, projectId)
     }
+
+    async runFounderBriefing (request: unknown): Promise<unknown> {
+        return ipcRenderer.invoke('app:run-founder-briefing', request)
+    }
 }

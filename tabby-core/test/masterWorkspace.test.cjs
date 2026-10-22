@@ -98,6 +98,40 @@ test('normalizes malformed project metadata without retaining unsafe or unbounde
     })
 })
 
+test('normalizes bounded founder owners, repositories, briefings and copy-ready messages', () => {
+    const metadata = normalizeMasterWorkspaceMetadata({
+        owner: { name: '  Sana  ', channel: ' WhatsApp ', ignored: 'no' },
+        repository: {
+            localPath: '/Users/m.aamirmursleen/calendarjet',
+            githubURL: 'https://github.com/example/calendarjet/',
+        },
+        briefing: {
+            generatedAt: '2026-10-23T04:00:00.000Z', source: 'codex', headline: 'Checkout is ready',
+            progress: Array.from({ length: 10 }, (_, index) => `Progress ${index}`),
+            pending: ['CAL-8: Confirm checkout'], risks: ['One overdue task'], growth: ['Ask for annual upgrades'],
+            message: { recipient: 'Sana', channel: 'WhatsApp', text: 'Please confirm CAL-8 and share the delivery date.' },
+            evidence: {
+                planeTaskCount: 999, gitCommitCount: 999,
+                repository: 'https://github.com/example/calendarjet', latestCommitAt: '2026-10-22T12:00:00Z',
+            },
+        },
+    })
+
+    assert.deepEqual(copy(metadata.owner), { name: 'Sana', channel: 'WhatsApp' })
+    assert.deepEqual(copy(metadata.repository), {
+        localPath: '/Users/m.aamirmursleen/calendarjet', githubURL: 'https://github.com/example/calendarjet',
+    })
+    assert.equal(metadata.briefing.progress.length, 6)
+    assert.equal(metadata.briefing.evidence.planeTaskCount, 250)
+    assert.equal(metadata.briefing.evidence.gitCommitCount, 24)
+    assert.equal(metadata.briefing.message.recipient, 'Sana')
+
+    const unsafe = normalizeMasterWorkspaceMetadata({
+        repository: { localPath: '/Users/me/repo\ninvalid', githubURL: 'https://github.com.evil.test/owner/repo' },
+    })
+    assert.equal(unsafe.repository, undefined)
+})
+
 test('saved registry priority overrides a derived catalog priority after restart', () => {
     const projects = buildMasterWorkspaceProjects(connections, { mama: { priority: 4 } }, Date.now())
     const mama = projects.find(project => project.id === 'mama')
@@ -290,6 +324,9 @@ test('the Master Workspace is a pinned first surface and offsets real tab number
 test('the dashboard exposes real project navigation and command palette controls', () => {
     const template = fs.readFileSync(path.resolve(__dirname, '../src/components/masterWorkspace.component.pug'), 'utf8')
     assert.match(template, /Founder command center/)
+    assert.match(template, /AI Agent/)
+    assert.match(template, /\/tabby/)
+    assert.match(template, /launchAIWorkspaceAgent\(\)/)
     assert.match(template, /All projects/)
     assert.match(template, /Summary/)
     assert.match(template, /Work items/)
@@ -317,6 +354,10 @@ test('the dashboard exposes real project navigation and command palette controls
     assert.match(template, /Add link/)
     assert.match(template, /saveKnowledgeNote\(\)/)
     assert.match(template, /saveKnowledgeLink\(\)/)
+    const agentComponent = fs.readFileSync(path.resolve(__dirname, '../src/components/masterWorkspace.component.ts'), 'utf8')
+    assert.match(agentComponent, /workspace\.launchTabbyAgent\(\)/)
+    const agentWorkspace = fs.readFileSync(path.resolve(__dirname, '../src/services/masterWorkspace.service.ts'), 'utf8')
+    assert.match(agentWorkspace, /profiles\.openNewTabForProfile\(buildTabbyAgentProfile\(\)\)/)
     assert.match(template, /removeKnowledgeLink\(index\)/)
     assert.match(template, /aria-label='Search projects, servers, folders and commands'/)
     assert.match(template, /Save project/)

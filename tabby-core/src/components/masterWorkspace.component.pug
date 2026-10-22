@@ -13,6 +13,10 @@
                 button(type='button', (click)='openCommandPalette()', aria-label='Open command palette') ⌘K
 
         nav.workspace-nav(aria-label='Workspace sections')
+            button.workspace-link(type='button', [class.active]='view === "briefing"', (click)='showView("briefing")')
+                i.fas.fa-sparkles(aria-hidden='true')
+                span Daily briefing
+                small {{briefedProjectCount}}/{{projectCount}}
             button.workspace-link(type='button', [class.active]='view === "overview"', (click)='showView("overview")')
                 i.fas.fa-list(aria-hidden='true')
                 span All projects
@@ -27,6 +31,10 @@
             button.workspace-link(type='button', (click)='openRegistry()')
                 i.fas.fa-sitemap(aria-hidden='true')
                 span Registry
+            button.workspace-link.agent-launch(type='button', [disabled]='agentLaunching', (click)='launchAIWorkspaceAgent()')
+                i.fas.fa-robot(aria-hidden='true')
+                span AI Agent
+                small /tabby
 
         .project-groups
             section.project-group(*ngIf='attentionProjects.length')
@@ -146,6 +154,8 @@
                                 span Registry
                     nav.project-tabs(aria-label='Project sections')
                         button(type='button', [class.active]='projectSection === "summary"', (click)='showProjectSection("summary")') Summary
+                        button(type='button', [class.active]='projectSection === "briefing"', (click)='showProjectSection("briefing")') Daily brief
+                        button(type='button', [class.active]='projectSection === "messages"', (click)='showProjectSection("messages")') Messages
                         button(type='button', [class.active]='projectSection === "work"', (click)='showProjectSection("work")')
                             | Work items
                             small {{selectedProject.openWork}}
@@ -159,6 +169,81 @@
                         button(type='button', [class.active]='projectSection === "activity"', (click)='showProjectSection("activity")') Activity
 
                 .project-body
+                    section.section-panel(*ngIf='projectSection === "briefing"')
+                        .section-intro
+                            span
+                                h2 Daily founder brief
+                                p Plane work, local Git activity and revenue context analyzed at 9:00 AM.
+                            .section-metrics
+                                span
+                                    strong {{selectedProject.metadata.briefing ? relativeTime(selectedProject.metadata.briefing.generatedAt) : 'Not run'}}
+                                    small Last briefing
+                                button.action-button.primary(type='button', [disabled]='workspace.briefingLoading', (click)='runFounderBriefing()')
+                                    i.fas([class.fa-sparkles]='!workspace.briefingLoading', [class.fa-circle-notch]='workspace.briefingLoading', [class.fa-spin]='workspace.briefingLoading', aria-hidden='true')
+                                    span {{workspace.briefingLoading ? 'Scanning…' : 'Run now'}}
+                        .briefing-empty(*ngIf='!selectedProject.metadata.briefing')
+                            i.fas.fa-sparkles(aria-hidden='true')
+                            h3 No briefing yet
+                            p Run the founder scan to check Plane tasks, Git progress and revenue actions for every project.
+                        .project-brief-grid(*ngIf='selectedProject.metadata.briefing')
+                            article.workspace-card.brief-headline
+                                .card-title Today
+                                h3 {{selectedProject.metadata.briefing.headline}}
+                                small {{selectedProject.metadata.briefing.source === 'codex' ? 'Codex analysis' : 'Local evidence fallback'}} · {{formatBriefingTime(selectedProject.metadata.briefing.generatedAt)}}
+                            article.workspace-card
+                                .card-title Progress found
+                                ul.brief-list
+                                    li(*ngFor='let item of selectedProject.metadata.briefing.progress') {{item}}
+                                .card-empty(*ngIf='!selectedProject.metadata.briefing.progress.length') No recent progress was found in the available evidence.
+                            article.workspace-card
+                                .card-title Pending now
+                                ul.brief-list.pending
+                                    li(*ngFor='let item of selectedProject.metadata.briefing.pending') {{item}}
+                            article.workspace-card
+                                .card-title Risks
+                                ul.brief-list.risks
+                                    li(*ngFor='let item of selectedProject.metadata.briefing.risks') {{item}}
+                            article.workspace-card.growth-card
+                                .card-title How to grow revenue
+                                ul.brief-list.growth
+                                    li(*ngFor='let item of selectedProject.metadata.briefing.growth') {{item}}
+                            article.workspace-card.evidence-card
+                                .card-title Evidence
+                                .evidence-stats
+                                    span
+                                        strong {{selectedProject.metadata.briefing.evidence.planeTaskCount}}
+                                        small Open Plane items
+                                    span
+                                        strong {{selectedProject.metadata.briefing.evidence.gitCommitCount}}
+                                        small Recent Git commits
+                                code(*ngIf='selectedProject.metadata.briefing.evidence.repository') {{selectedProject.metadata.briefing.evidence.repository}}
+
+                    section.section-panel(*ngIf='projectSection === "messages"')
+                        .section-intro
+                            span
+                                h2 Message the project owner
+                                p Simple, copy-ready English grounded in the latest Plane and Git evidence.
+                            button.mini-button(type='button', (click)='openEditor(selectedProject)')
+                                i.fas.fa-user-pen(aria-hidden='true')
+                                span Edit owner
+                        .briefing-empty(*ngIf='!selectedProject.metadata.briefing')
+                            h3 Run the daily briefing first
+                            p The agent will create the message after it checks this project's real pending work.
+                            button.action-button.primary(type='button', [disabled]='workspace.briefingLoading', (click)='runFounderBriefing()') Run now
+                        article.message-card(*ngIf='selectedProject.metadata.briefing')
+                            .message-recipient
+                                span.avatar {{selectedProject.metadata.briefing.message.recipient.slice(0, 1)}}
+                                span
+                                    small SEND TO
+                                    strong {{selectedProject.metadata.briefing.message.recipient}}
+                                    em {{selectedProject.metadata.briefing.message.channel}}
+                            textarea(readonly, [value]='selectedProject.metadata.briefing.message.text', rows='7', aria-label='Copy-ready manager message')
+                            .message-actions
+                                span Based on {{selectedProject.metadata.briefing.evidence.planeTaskCount}} Plane items and {{selectedProject.metadata.briefing.evidence.gitCommitCount}} Git commits
+                                button.action-button.primary(type='button', (click)='copyManagerMessage(selectedProject)')
+                                    i.fas.fa-copy(aria-hidden='true')
+                                    span Copy message
+
                     section.summary-layout(*ngIf='projectSection === "summary"')
                         .summary-primary
                             article.workspace-card.attention-card
@@ -521,6 +606,61 @@
                                 span {{item.label}} · {{statusLabel(item)}}
                                 small {{item.status.workingDirectory || item.status.tmuxSession || item.status.detail}}
 
+            section.global-page.briefing-page(*ngIf='view === "briefing"')
+                .page-heading.briefing-heading
+                    span
+                        small FOUNDER · DAILY 9:00 AM
+                        h1 Daily founder briefing
+                        p See what moved, what is pending, what can grow revenue, and the exact message to send each project owner.
+                    .page-heading-actions
+                        span.next-run
+                            small NEXT AUTOMATIC SCAN
+                            strong {{formatBriefingTime(workspace.nextBriefingAt)}}
+                        button.action-button(type='button', [disabled]='agentLaunching', (click)='launchAIWorkspaceAgent()')
+                            i.fas.fa-robot(aria-hidden='true')
+                            span AI Agent
+                        button.action-button.primary(type='button', [disabled]='workspace.briefingLoading', (click)='runFounderBriefing()')
+                            i.fas([class.fa-sparkles]='!workspace.briefingLoading', [class.fa-circle-notch]='workspace.briefingLoading', [class.fa-spin]='workspace.briefingLoading', aria-hidden='true')
+                            span {{workspace.briefingLoading ? 'Checking Plane & Git…' : 'Run now'}}
+                .briefing-warning(*ngIf='workspace.briefingError')
+                    i.fas.fa-triangle-exclamation(aria-hidden='true')
+                    span Codex was unavailable, so the app used local evidence: {{workspace.briefingError}}
+                .briefing-overview
+                    article.briefing-project-card(*ngFor='let project of projects; trackBy: trackByProject', [class.needs-attention]='project.attention.band === "attention"')
+                        .briefing-project-head
+                            span.priority-stripe([class]="'p' + project.priority")
+                            span
+                                strong {{project.name}}
+                                small {{project.metadata.owner.name || 'Owner not assigned'}} · P{{project.priority}}
+                            span.brief-source(*ngIf='project.metadata.briefing') {{project.metadata.briefing.source === 'codex' ? 'CODEX' : 'LOCAL'}}
+                        .briefing-project-body(*ngIf='project.metadata.briefing')
+                            h3 {{project.metadata.briefing.headline}}
+                            .briefing-column
+                                small PENDING
+                                p {{project.metadata.briefing.pending[0] || 'No pending item found.'}}
+                            .briefing-column.growth
+                                small REVENUE MOVE
+                                p {{project.metadata.briefing.growth[0] || 'Review the paid offer with customers.'}}
+                            .briefing-evidence
+                                span
+                                    i.fas.fa-list-check(aria-hidden='true')
+                                    | {{project.metadata.briefing.evidence.planeTaskCount}} tasks
+                                span
+                                    i.fab.fa-git-alt(aria-hidden='true')
+                                    | {{project.metadata.briefing.evidence.gitCommitCount}} commits
+                                span {{relativeTime(project.metadata.briefing.generatedAt)}}
+                        .briefing-project-body.empty(*ngIf='!project.metadata.briefing')
+                            h3 Waiting for the first scan
+                            p Run now to create pending work, revenue actions and the owner message.
+                        .briefing-project-actions
+                            button.text-action(type='button', (click)='openProjectBriefing(project)') Open brief
+                            button.mini-button(type='button', [disabled]='!project.metadata.briefing', (click)='openProjectMessages(project)')
+                                i.fas.fa-message(aria-hidden='true')
+                                span Message
+                            button.mini-button(type='button', [disabled]='!project.metadata.briefing', (click)='copyManagerMessage(project)')
+                                i.fas.fa-copy(aria-hidden='true')
+                                span Copy
+
             section.overview-page(*ngIf='view === "overview"')
                 .page-heading
                     span
@@ -639,6 +779,16 @@
                     button.action-button.primary(type='button', [disabled]='workspace.syncLoading', (click)='syncRemoteData()')
                         i.fas([class.fa-rotate]='!workspace.syncLoading', [class.fa-circle-notch]='workspace.syncLoading', [class.fa-spin]='workspace.syncLoading', aria-hidden='true')
                         span {{workspace.syncLoading ? 'Syncing verified data…' : 'Sync now'}}
+                article.settings-card.briefing-settings
+                    .settings-status
+                        span.relay-orb.configured
+                        span
+                            strong Daily founder briefing · 9:00 AM
+                            small Runs while Aamir Terminal is open and catches up after restart or wake.
+                    .security-note
+                        i.fas.fa-robot(aria-hidden='true')
+                        span Codex receives bounded Plane tasks and Git commit metadata only. Scheduled scans are read-only and never start servers or SSH connections.
+                    button.action-button(type='button', [disabled]='workspace.briefingLoading', (click)='runFounderBriefing()') Run now
 
         footer.terminal-drawer(*ngIf='view === "project" && selectedProject', [class.open]='terminalDrawerOpen')
             button.drawer-heading(type='button', (click)='terminalDrawerOpen = !terminalDrawerOpen')
@@ -702,6 +852,19 @@
                 label.field-label
                     span Founder notes
                     textarea(name='notes', [(ngModel)]='draft.notes', rows='4', maxlength='20000', placeholder='Current focus, decisions and next action')
+                .editor-grid
+                    label.field-label
+                        span Project owner
+                        input(type='text', name='ownerName', [(ngModel)]='draft.ownerName', maxlength='120', placeholder='Sana')
+                    label.field-label
+                        span Message channel
+                        input(type='text', name='ownerChannel', [(ngModel)]='draft.ownerChannel', maxlength='40', placeholder='WhatsApp, Slack or email')
+                label.field-label
+                    span Local Git folder
+                    input(type='text', name='repositoryPath', [(ngModel)]='draft.repositoryPath', maxlength='4096', placeholder='/Users/m.aamirmursleen/project-name')
+                label.field-label
+                    span GitHub repository
+                    input(type='url', name='githubURL', [(ngModel)]='draft.githubURL', maxlength='2048', placeholder='https://github.com/company/project-name')
                 .editor-grid.four
                     label.field-label
                         span Total work

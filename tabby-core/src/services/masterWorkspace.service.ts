@@ -9,6 +9,15 @@ import { BaseTabComponent } from '../components/baseTab.component'
 import { SplitTabComponent } from '../components/splitTab.component'
 import { buildActiveSessionItems, ActiveSessionItem } from '../utils/openTabs'
 import {
+    applyFounderBriefingSchedule,
+    buildFallbackFounderBriefing,
+    buildFounderBriefingRequest,
+    FounderBriefingSchedule,
+    nextFounderBriefingRun,
+    shouldRunFounderBriefing,
+} from '../utils/founderBriefing'
+import { buildTabbyAgentProfile, TABBY_AGENT_TITLE } from '../utils/tabbyAgent'
+import {
     buildConnectionProjects,
     ConnectionProfileLike,
     ConnectionProjectItem,
@@ -42,6 +51,8 @@ export class MasterWorkspaceService {
     syncError = ''
     syncSource = 'Nafran OS API'
     lastSyncedAt = ''
+    briefingLoading = false
+    briefingError = ''
     readonly changed$ = new BehaviorSubject<void>(undefined)
     private refreshGeneration = 0
     private remoteSnapshot: MasterWorkspaceRemoteSnapshot|null = null
@@ -51,6 +62,8 @@ export class MasterWorkspaceService {
     private readonly workItemOperations = new Map<string, Promise<void>>()
     private readonly loadingWorkItemProjects = new Set<string>()
     private readonly workItemErrors = new Map<string, string>()
+    private briefingOperation: Promise<'codex'|'local'>|null = null
+    private briefingTimer: number|null = null
 
     constructor (
         private app: AppService,
@@ -63,10 +76,14 @@ export class MasterWorkspaceService {
         this.syncProviders = providers ?? []
         this.app.activeTabChange$.subscribe(() => this.refresh())
         this.app.tabStateChanged$.subscribe(() => this.refresh())
-        this.config.changed$.subscribe(() => this.refresh())
+        this.config.changed$.subscribe(() => {
+            void this.refresh()
+            this.scheduleFounderBriefing()
+        })
         this.config.ready$.toPromise().then(async () => {
             await this.refresh()
             await this.syncRemoteData()
+            this.scheduleFounderBriefing()
             window.setInterval(() => this.syncRemoteData(), 60_000)
         })
     }
@@ -76,6 +93,28 @@ export class MasterWorkspaceService {
             relayUrl: this.config.store?.masterWorkspace?.relay?.url ?? '',
             workspaceSlug: this.config.store?.masterWorkspace?.relay?.workspaceSlug ?? '',
         }
+    }
+
+    get briefingSchedule (): FounderBriefingSchedule {
+        const value = this.config.store?.masterWorkspace?.briefing
+        return {
+            enabled: value?.enabled !== false,
+            hour: Number.isFinite(value?.hour) ? Math.min(23, Math.max(0, Math.floor(value.hour))) : 9,
+            minute: Number.isFinite(value?.minute) ? Math.min(59, Math.max(0, Math.floor(value.minute))) : 0,
+            lastRunAt: typeof value?.lastRunAt === 'string' && Number.isFinite(Date.parse(value.lastRunAt))
+                ? value.lastRunAt
+                : undefined,
+            lastRunDate: typeof value?.lastRunDate === 'string' ? value.lastRunDate : undefined,
+        }
+    }
+
+    get nextBriefingAt (): Date|null {
+        const schedule = this.briefingSchedule
+        if (!schedule.enabled) { return null }
+        const now = new Date()
+        return shouldRunFounderBriefing(schedule, now)
+            ? now
+            : nextFounderBriefingRun(now, schedule.hour, schedule.minute, schedule.lastRunDate)
     }
 
     async refresh (): Promise<void> {
@@ -144,6 +183,28 @@ export class MasterWorkspaceService {
             await operation
         } finally {
             this.workItemOperations.delete(project.id)
+        }
+    }
+
+    async launchTabbyAgent (): Promise<'opened'|'focused'> {
+        const existing = this.app.tabs.find(tab => tab.customTitle === TABBY_AGENT_TITLE || tab.title === TABBY_AGENT_TITLE)
+        if (existing) {
+            this.app.selectTab(existing)
+            return 'focused'
+        }
+        const opened = await this.profiles.openNewTabForProfile(buildTabbyAgentProfile())
+        if (!opened) { throw new Error('Could not open the Tabby AI Agent terminal.') }
+        return 'opened'
+    }
+
+    async runFounderBriefing (force = false): Promise<'codex'|'local'> {
+        if (this.briefingOperation) { return this.briefingOperation }
+        this.briefingOperation = this.performFounderBriefing(force)
+        try {
+            return await this.briefingOperation
+        } finally {
+            this.briefingOperation = null
+            this.scheduleFounderBriefing()
         }
     }
 
@@ -303,6 +364,119 @@ export class MasterWorkspaceService {
             this.loadingWorkItemProjects.delete(project.id)
             this.changed$.next()
         }
+    }
+
+    private async performFounderBriefing (force: boolean): Promise<'codex'|'local'> {
+        this.briefingLoading = true
+        this.briefingError = ''
+        this.changed$.next()
+        const startedAt = new Date()
+        let source: 'codex'|'local' = 'local'
+        let responseProjects: any[] = []
+        let projectsForBriefing: MasterWorkspaceProject<BaseTabComponent>[] = this.projects
+        try {
+            await this.syncRemoteData(force)
+            await this.refreshProjectWorkItemsForBriefing(force)
+            projectsForBriefing = this.projects.map(project => ({
+                ...project,
+                metadata: {
+                    ...project.metadata,
+                    work: {
+                        ...project.metadata.work,
+                        items: this.projectWorkItems.get(project.id) ?? project.metadata.work.items ?? [],
+                    },
+                },
+            }))
+            const request = buildFounderBriefingRequest(projectsForBriefing, startedAt)
+            const provider = this.syncProviders.find(candidate => typeof candidate.runFounderBriefing === 'function')
+            if (!provider?.runFounderBriefing) { throw new Error('This build does not include the Codex briefing provider.') }
+            const loaded = await provider.runFounderBriefing(request)
+            if (!loaded || typeof loaded !== 'object' || Array.isArray(loaded)) {
+                throw new Error('Codex returned an invalid founder briefing.')
+            }
+            const loadedProjects = (loaded as Record<string, unknown>).projects
+            if (!Array.isArray(loadedProjects)) { throw new Error('Codex returned no project briefings.') }
+            responseProjects = loadedProjects
+            source = 'codex'
+        } catch (error) {
+            this.briefingError = error instanceof Error ? error.message : 'Codex could not create the daily briefing.'
+        }
+
+        const responseByID = new Map(responseProjects.flatMap(value => {
+            if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.id !== 'string') { return [] }
+            return [[value.id, value] as const]
+        }))
+        const previousProjects = deepClone(this.config.store.masterWorkspace.projects ?? {})
+        const previousSchedule = deepClone(this.config.store.masterWorkspace.briefing)
+        const generatedAt = new Date().toISOString()
+        try {
+            const nextProjects = { ...previousProjects }
+            for (const project of projectsForBriefing) {
+                const codexValue = responseByID.get(project.id)
+                const briefing = codexValue
+                    ? normalizeMasterWorkspaceMetadata({ briefing: codexValue }).briefing
+                    : buildFallbackFounderBriefing(project, new Date(generatedAt))
+                if (!briefing) { continue }
+                const saved = normalizeMasterWorkspaceMetadata(previousProjects[project.id])
+                nextProjects[project.id] = normalizeMasterWorkspaceMetadata({ ...saved, briefing })
+            }
+            const localDate = `${startedAt.getFullYear()}-${String(startedAt.getMonth() + 1).padStart(2, '0')}-${String(startedAt.getDate()).padStart(2, '0')}`
+            this.config.store.masterWorkspace.projects = nextProjects
+            applyFounderBriefingSchedule(this.config.store.masterWorkspace.briefing, {
+                enabled: true,
+                hour: this.briefingSchedule.hour,
+                minute: this.briefingSchedule.minute,
+                lastRunAt: generatedAt,
+                lastRunDate: localDate,
+            })
+            await this.config.save()
+            await this.refresh()
+            return source
+        } catch (error) {
+            this.config.store.masterWorkspace.projects = previousProjects
+            applyFounderBriefingSchedule(this.config.store.masterWorkspace.briefing, previousSchedule)
+            throw error
+        } finally {
+            this.briefingLoading = false
+            this.scheduleFounderBriefing()
+            this.changed$.next()
+        }
+    }
+
+    private async refreshProjectWorkItemsForBriefing (force: boolean): Promise<void> {
+        const projects = this.projects.filter(project => !!project.metadata.plane.workspaceSlug)
+        let index = 0
+        const worker = async (): Promise<void> => {
+            while (index < projects.length) {
+                await this.syncProjectWorkItems(projects[index++], force)
+            }
+        }
+        await Promise.all(Array.from({ length: Math.min(2, projects.length) }, () => worker()))
+    }
+
+    private scheduleFounderBriefing (): void {
+        if (!this.config.store?.masterWorkspace) { return }
+        if (this.briefingTimer !== null) {
+            window.clearTimeout(this.briefingTimer)
+            this.briefingTimer = null
+        }
+        const schedule = this.briefingSchedule
+        if (!schedule.enabled || this.briefingLoading) { return }
+        const now = new Date()
+        const runIfDue = (): void => {
+            this.briefingTimer = null
+            if (shouldRunFounderBriefing(this.briefingSchedule, new Date())) {
+                void this.runFounderBriefing(true)
+            } else {
+                this.scheduleFounderBriefing()
+            }
+        }
+        if (shouldRunFounderBriefing(schedule, now)) {
+            this.briefingTimer = window.setTimeout(runIfDue, 1_000)
+            return
+        }
+        const next = nextFounderBriefingRun(now, schedule.hour, schedule.minute, schedule.lastRunDate)
+        this.briefingTimer = window.setTimeout(runIfDue, Math.max(1_000, next.getTime() - now.getTime()))
     }
 
     private applyCachedWorkItems (snapshot: MasterWorkspaceRemoteSnapshot): void {

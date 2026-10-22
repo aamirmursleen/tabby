@@ -14,6 +14,7 @@ import { PTYManager } from './pty'
 import { configureChromiumPerformance } from './performance'
 import { loadNafranOSWorkspaceFeeds } from './nafranOSWorkspace'
 import { loadPlaneWorkspaceWorkItems } from './planeWorkspace'
+import { runFounderBriefing } from './founderBriefing'
 
 /* eslint-disable block-scoped-var */
 
@@ -58,6 +59,17 @@ export class Application {
                 throw new Error('Blocked a Plane API request from an unexpected page.')
             }
             return loadPlaneWorkspaceWorkItems(workspaceSlug, force, projectId)
+        })
+
+        ipcMain.handle('app:run-founder-briefing', async (event, request) => {
+            const senderURL = event.senderFrame?.url ?? event.sender.getURL()
+            const trustedWindow = this.windows.some(window => !window.isDestroyed() && window.webContents.id === event.sender.id)
+            if (!trustedWindow || !senderURL.startsWith('file://') || !request || typeof request !== 'object' || Array.isArray(request)) {
+                throw new Error('Blocked a founder briefing request from an unexpected page.')
+            }
+            const requestBytes = Buffer.byteLength(JSON.stringify(request), 'utf8')
+            if (requestBytes > 512 * 1024) { throw new Error('Founder briefing request is too large.') }
+            return runFounderBriefing(request)
         })
 
         ipcMain.on('app:register-global-hotkey', (_event, specs) => {
