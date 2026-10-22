@@ -22,8 +22,8 @@
                 span Knowledge
             button.workspace-link(type='button', [class.active]='view === "settings"', (click)='showView("settings")')
                 i.fas.fa-tower-broadcast(aria-hidden='true')
-                span Sync & relay
-                small.relay-live(*ngIf='workspace.settings.relayUrl') Live
+                span Sync & API
+                small.relay-live(*ngIf='workspace.lastSyncedAt') Live
             button.workspace-link(type='button', (click)='openRegistry()')
                 i.fas.fa-sitemap(aria-hidden='true')
                 span Registry
@@ -89,16 +89,16 @@
             .empty-rail(*ngIf='visibleProjects.length === 0') No matching projects
 
         button.relay-footer(type='button', (click)='showView("settings")')
-            span.relay-orb([class.configured]='workspace.settings.relayUrl')
+            span.relay-orb([class.configured]='workspace.lastSyncedAt')
             span
-                strong {{workspace.settings.relayUrl ? 'Plane live via relay' : 'Local workspace'}}
-                small {{workspace.settings.relayUrl ? 'Realtime project updates' : 'Configure secure realtime sync'}}
+                strong {{workspace.lastSyncedAt ? workspace.syncSource + ' connected' : 'Nafran OS API'}}
+                small {{workspace.syncLoading ? 'Syncing verified data…' : workspace.lastSyncedAt ? 'Work and revenue · ' + relativeTime(workspace.lastSyncedAt) : 'Waiting for secure API sync'}}
             i.fas.fa-chevron-right(aria-hidden='true')
 
     section.workspace-main
-        .master-error(*ngIf='error || workspace.error')
+        .master-error(*ngIf='error || workspace.error || workspace.syncError')
             i.fas.fa-circle-exclamation(aria-hidden='true')
-            span {{error || workspace.error}}
+            span {{error || workspace.error || workspace.syncError}}
         .master-status(*ngIf='status') {{status}}
         .master-loading(*ngIf='workspace.loading')
             i.fas.fa-circle-notch.fa-spin(aria-hidden='true')
@@ -203,7 +203,7 @@
                             article.workspace-card.revenue-card
                                 .card-title-row
                                     span.card-title Revenue
-                                    small 12 months · {{formatMoney(revenueTotal(selectedProject), selectedProject.metadata.revenue.currency)}}
+                                    small {{selectedProject.metadata.revenue.history.length}} months · {{formatMoney(revenueTotal(selectedProject), selectedProject.metadata.revenue.currency)}}
                                 .revenue-value
                                     strong {{formatMoney(selectedProject.metadata.revenue.currentMonthly, selectedProject.metadata.revenue.currency)}}/mo
                                     span.positive(*ngIf='revenueDelta(selectedProject) !== null') {{revenueDelta(selectedProject)}}% vs previous month
@@ -213,6 +213,9 @@
                                     span(*ngFor='let bar of revenueBars(selectedProject)') {{bar.month.slice(-2)}}
                                 p(*ngIf='selectedProject.metadata.revenue.status === "unmapped"') Revenue is not connected yet. Add the trusted source in Registry.
                                 p(*ngIf='selectedProject.metadata.revenue.status !== "unmapped"') Source · {{selectedProject.metadata.revenue.source || 'Manual registry'}}
+                                button.text-action.sync-action(type='button', [disabled]='workspace.syncLoading', (click)='syncRemoteData()')
+                                    i.fas([class.fa-rotate]='!workspace.syncLoading', [class.fa-circle-notch]='workspace.syncLoading', [class.fa-spin]='workspace.syncLoading', aria-hidden='true')
+                                    span {{workspace.syncLoading ? 'Syncing…' : 'Sync now'}}
                             article.workspace-card.progress-card
                                 .card-title-row
                                     span.card-title Progress · Plane
@@ -347,7 +350,7 @@
                     .overview-row.header
                         span Project
                         span Progress
-                        span Revenue · 12 mo
+                        span Revenue · live
                         span Open work
                         span Servers · tmux
                         span Knowledge · /aamir
@@ -426,24 +429,20 @@
             section.global-page.settings-page(*ngIf='view === "settings"')
                 .page-heading
                     span
-                        h1 Sync & relay
-                        p True realtime Plane updates through a signed relay. API keys stay on the relay server.
-                form.settings-card((ngSubmit)='saveSettings()')
+                        h1 Sync & API
+                        p Verified Plane work and owner-share revenue arrive directly from the protected Nafran OS API.
+                article.settings-card
                     .settings-status
-                        span.relay-orb([class.configured]='settingsDraft.relayUrl')
+                        span.relay-orb([class.configured]='workspace.lastSyncedAt')
                         span
-                            strong {{settingsDraft.relayUrl ? 'Relay ready to connect' : 'Relay not configured'}}
-                            small Signed Plane webhooks and an SSE event stream update this workspace.
-                    label.field-label
-                        span Relay HTTPS URL
-                        input(type='url', name='relayUrl', [(ngModel)]='settingsDraft.relayUrl', placeholder='https://relay.example.com')
-                    label.field-label
-                        span Plane workspace slug
-                        input(type='text', name='workspaceSlug', [(ngModel)]='settingsDraft.workspaceSlug', placeholder='your-workspace')
+                            strong {{workspace.lastSyncedAt ? workspace.syncSource + ' connected' : 'Connecting to Nafran OS API'}}
+                            small {{workspace.lastSyncedAt ? 'Last verified ' + relativeTime(workspace.lastSyncedAt) + ' · refreshes every minute' : 'The first secure sync will run automatically.'}}
                     .security-note
                         i.fas.fa-shield-halved(aria-hidden='true')
-                        span Keep the Plane API key in the relay’s protected environment, never in this app.
-                    button.action-button.primary(type='submit', [disabled]='saving') {{saving ? 'Saving…' : 'Save relay settings'}}
+                        span Cloudflare Access credentials are stored in macOS Keychain. The app reads only project work, health and owner-share revenue from allowlisted HTTPS endpoints.
+                    button.action-button.primary(type='button', [disabled]='workspace.syncLoading', (click)='syncRemoteData()')
+                        i.fas([class.fa-rotate]='!workspace.syncLoading', [class.fa-circle-notch]='workspace.syncLoading', [class.fa-spin]='workspace.syncLoading', aria-hidden='true')
+                        span {{workspace.syncLoading ? 'Syncing verified data…' : 'Sync now'}}
 
         footer.terminal-drawer(*ngIf='view === "project" && selectedProject', [class.open]='terminalDrawerOpen')
             button.drawer-heading(type='button', (click)='terminalDrawerOpen = !terminalDrawerOpen')

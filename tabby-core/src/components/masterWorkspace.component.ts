@@ -292,6 +292,13 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
         }
     }
 
+    async syncRemoteData (): Promise<void> {
+        this.error = ''
+        this.status = ''
+        await this.workspace.syncRemoteData(true)
+        if (!this.workspace.syncError) { this.status = 'Project work and revenue synced from Nafran OS' }
+    }
+
     openCommandPalette (): void {
         this.commandQuery = ''
         this.commandPaletteOpen = true

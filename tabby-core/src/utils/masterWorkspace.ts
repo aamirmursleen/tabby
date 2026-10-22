@@ -83,6 +83,166 @@ export interface MasterWorkspaceSearchResult<T = any> {
     action?: 'overview'|'work'|'knowledge'|'connections'|'settings'
 }
 
+export interface MasterWorkspaceRemoteSnapshot {
+    schemaVersion: 1
+    generatedAt: string
+    source?: string
+    projects: (MasterWorkspaceProjectMetadata & {
+        id?: string
+        name?: string
+        aliases?: string[]
+    })[]
+}
+
+/**
+ * Converts the sanitized Nafran OS dashboard feeds into the small project-only
+ * payload consumed by Master Workspace. Transaction records and account data
+ * never leave the provider.
+ */
+export function buildNafranOSWorkspaceSnapshot (
+    snapshotValue: unknown,
+    shopifyValue: unknown,
+    profileValue: unknown,
+    now = new Date(),
+): MasterWorkspaceRemoteSnapshot {
+    const object = (value: unknown): Record<string, any> => value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, any>
+        : {}
+    const list = (value: unknown): Record<string, any>[] => Array.isArray(value)
+        ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)).slice(0, 250)
+        : []
+    const identity = (value: unknown): string => typeof value === 'string'
+        ? value.toLocaleLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 160)
+        : ''
+    const text = (value: unknown, fallback = ''): string => typeof value === 'string'
+        ? value.trim().slice(0, 200)
+        : fallback
+    const count = (value: unknown): number => Number.isFinite(Number(value))
+        ? Math.max(0, Math.floor(Number(value)))
+        : 0
+    const validDate = (value: unknown): string|undefined => typeof value === 'string' && Number.isFinite(Date.parse(value))
+        ? value
+        : undefined
+
+    const snapshot = object(snapshotValue)
+    const shopify = object(shopifyValue)
+    const profile = object(profileValue)
+    const aliases = object(profile.project_aliases)
+    const aliasesByIdentity = new Map<string, string>()
+    for (const [alias, canonical] of Object.entries(aliases)) {
+        if (typeof canonical === 'string') { aliasesByIdentity.set(identity(alias), canonical) }
+    }
+    const canonicalName = (value: unknown): string => {
+        const name = text(value, 'Unknown project')
+        const configured = aliasesByIdentity.get(identity(name))
+        if (configured) { return configured }
+        if (/^mamasign(?:dev|marketing)$/i.test(identity(name))) { return 'MamaSign' }
+        return name
+    }
+
+    const businessByIdentity = new Map<string, Record<string, any>>()
+    for (const item of list(profile.business_scope)) {
+        const key = identity(item.project)
+        if (key) { businessByIdentity.set(key, item) }
+    }
+    const signals = list(snapshot.project_signals)
+    const signalFor = (workspace: Record<string, any>): Record<string, any> => signals.find(signal =>
+        identity(signal.slug) === identity(workspace.slug)
+        || identity(signal.workspace) === identity(workspace.label),
+    ) ?? {}
+    const projectsByIdentity = new Map<string, MasterWorkspaceRemoteSnapshot['projects'][number]>()
+    const ensureProject = (nameValue: unknown, idValue?: unknown): MasterWorkspaceRemoteSnapshot['projects'][number] => {
+        const name = canonicalName(nameValue)
+        const id = identity(idValue) || identity(name)
+        const key = identity(name) || id
+        let project = projectsByIdentity.get(key)
+        if (!project) {
+            project = { id, name, aliases: [] }
+            projectsByIdentity.set(key, project)
+        }
+        const alias = text(nameValue)
+        if (alias && alias !== name && !project.aliases?.includes(alias)) { project.aliases?.push(alias) }
+        return project
+    }
+
+    for (const workspace of list(object(snapshot.plane).workspaces)) {
+        const project = ensureProject(workspace.label, workspace.slug)
+        const signal = signalFor(workspace)
+        const total = count(signal.work_items_total ?? workspace.work_items_total)
+        const open = Math.min(total, count(signal.work_items_open ?? workspace.work_items_open))
+        const sampledProjects = list(workspace.projects)
+        const hasCompleteStateCounts = sampledProjects.length > 0 && sampledProjects.every(item =>
+            object(item.by_state_group).completed !== undefined
+            && count(item.work_items_sampled) === count(item.work_items_total),
+        )
+        const completed = Math.min(total, hasCompleteStateCounts
+            ? sampledProjects.reduce((sum, item) => sum + count(object(item.by_state_group).completed), 0)
+            : count(signal.work_items_completed_or_cancelled ?? workspace.work_items_completed_or_cancelled ?? total - open))
+        project.work = { total, completed, blocked: 0, overdue: 0 }
+
+        const connected = workspace.state === 'connected'
+        const updatedAt = validDate(signal.latest_work_update) ?? validDate(workspace.latest_update)
+        project.plane = {
+            status: connected ? 'live' : 'failing',
+            identifier: text(workspace.slug || workspace.label).toLocaleUpperCase().slice(0, 32),
+        }
+        if (updatedAt) { project.plane.updatedAt = updatedAt }
+        const checks = list(signal.public_checks)
+        const checkStates = checks.map(check => text(check.status).toLocaleLowerCase())
+        const deploymentWarnings = count(signal.deployment_warnings)
+        project.health = !connected
+            ? 'degraded'
+            : checkStates.some(state => ['critical', 'down', 'failed', 'error'].includes(state))
+                ? 'down'
+                : deploymentWarnings > 0 || checkStates.some(state => state && !['ok', 'not_connected'].includes(state))
+                    ? 'degraded'
+                    : 'healthy'
+        if (updatedAt) { project.lastActivityAt = updatedAt }
+    }
+
+    const currentMonth = now.toISOString().slice(0, 7)
+    for (const store of list(shopify.stores)) {
+        const name = canonicalName(store.project || store.store)
+        const project = ensureProject(name, store.store)
+        const business = businessByIdentity.get(identity(name)) ?? businessByIdentity.get(identity(store.project))
+        const ownership = Number(business?.equity_pct)
+        if (!Number.isFinite(ownership) || ownership < 0 || ownership > 100) { continue }
+        const currency = /^[A-Z]{3}$/.test(text(store.currency).toUpperCase()) ? text(store.currency).toUpperCase() : 'USD'
+        const history = list(store.monthly).slice(-12).flatMap(month => {
+            const monthKey = text(month.month)
+            if (!/^\d{4}-\d{2}$/.test(monthKey)) { return [] }
+            const currencyAmounts = object(object(month.amounts_by_currency)[currency])
+            const gross = Number(currencyAmounts.received_less_refunds)
+            if (!Number.isFinite(gross)) { return [{ month: monthKey, amount: 0 }] }
+            return [{ month: monthKey, amount: Math.max(0, Math.round(gross * ownership) / 100) }]
+        })
+        const currentAmount = history.find(item => item.month === currentMonth)?.amount ?? history.at(-1)?.amount ?? 0
+        const updatedAt = validDate(store.generated_at) ?? validDate(shopify.generated_at)
+        project.revenue = {
+            currency,
+            currentMonthly: currentAmount,
+            history,
+            status: store.ok === true && store.state === 'connected' ? 'live' : 'stale',
+            source: `Nafran OS API · Shopify owner share (${ownership}%)`,
+        }
+        if (updatedAt) { project.revenue.updatedAt = updatedAt }
+        if (updatedAt && (!project.lastActivityAt || Date.parse(updatedAt) > Date.parse(project.lastActivityAt))) {
+            project.lastActivityAt = updatedAt
+        }
+    }
+
+    const generatedAt = [snapshot.generated_at, shopify.generated_at]
+        .map(validDate)
+        .filter((value): value is string => !!value)
+        .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? now.toISOString()
+    return {
+        schemaVersion: 1,
+        generatedAt,
+        source: 'Nafran OS API',
+        projects: [...projectsByIdentity.values()],
+    }
+}
+
 export function organizeFounderProjects<T> (projects: readonly ConnectionProject<T>[]): ConnectionProject<T>[] {
     const catalog: { id: string, name: string, priority: ConnectionPriority, aliases: string[] }[] = [
         { id: 'mamasign', name: 'MamaSign', priority: 1, aliases: ['mamasign', 'mama sign'] },
@@ -277,6 +437,60 @@ export function normalizeMasterWorkspaceMetadata (value: unknown): MasterWorkspa
     const lastActivityAt = cleanText(input.lastActivityAt, 64)
     if (lastActivityAt && Number.isFinite(Date.parse(lastActivityAt))) { result.lastActivityAt = lastActivityAt }
     return result
+}
+
+/**
+ * Applies only operational fields from the sanitized remote snapshot. Founder
+ * descriptions, notes, priorities and knowledge paths always remain local.
+ */
+export function mergeMasterWorkspaceRemoteSnapshot<T> (
+    projects: readonly ConnectionProject<T>[],
+    metadataByID: Readonly<Record<string, unknown>>,
+    snapshotValue: unknown,
+): Record<string, MasterWorkspaceProjectMetadata> {
+    const output: Record<string, MasterWorkspaceProjectMetadata> = Object.fromEntries(
+        Object.entries(metadataByID).map(([id, value]) => [id, normalizeMasterWorkspaceMetadata(value)]),
+    )
+    if (!snapshotValue || typeof snapshotValue !== 'object' || Array.isArray(snapshotValue)) { return output }
+    const snapshot = snapshotValue as Record<string, any>
+    if (snapshot.schemaVersion !== 1 || !Number.isFinite(Date.parse(snapshot.generatedAt))) { return output }
+    if (!Array.isArray(snapshot.projects) || snapshot.projects.length > 200) { return output }
+
+    const identity = (value: unknown): string => typeof value === 'string'
+        ? value.toLocaleLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 160)
+        : ''
+    const projectByIdentity = new Map<string, ConnectionProject<T>>()
+    for (const project of projects) {
+        projectByIdentity.set(identity(project.id), project)
+        projectByIdentity.set(identity(project.name), project)
+    }
+
+    for (const remoteValue of snapshot.projects) {
+        if (!remoteValue || typeof remoteValue !== 'object' || Array.isArray(remoteValue)) { continue }
+        const remote = remoteValue as Record<string, any>
+        const remoteAliases = Array.isArray(remote.aliases) ? remote.aliases.slice(0, 20) : []
+        const identities = [remote.id, remote.name, ...remoteAliases]
+            .map(identity)
+            .filter(Boolean)
+        const project = identities.map(value => projectByIdentity.get(value)).find(Boolean)
+        if (!project) { continue }
+
+        const saved = normalizeMasterWorkspaceMetadata(metadataByID[project.id])
+        const live = normalizeMasterWorkspaceMetadata(remote)
+        const merged: MasterWorkspaceProjectMetadata = { ...saved }
+        if (live.work) { merged.work = live.work }
+        if (live.revenue) { merged.revenue = live.revenue }
+        if (live.plane) { merged.plane = live.plane }
+        if (live.health) { merged.health = live.health }
+        if (live.lastActivityAt) { merged.lastActivityAt = live.lastActivityAt }
+        if (live.links?.length) {
+            const savedLinks = saved.links ?? []
+            const links = [...savedLinks, ...live.links]
+            merged.links = links.filter((link, index) => links.findIndex(candidate => candidate.url === link.url) === index).slice(0, 24)
+        }
+        output[project.id] = merged
+    }
+    return output
 }
 
 export function buildMasterWorkspaceProjects<T> (

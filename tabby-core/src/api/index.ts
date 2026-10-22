@@ -18,6 +18,8 @@ export { HostAppService, Platform } from './hostApp'
 export { FileProvider } from './fileProvider'
 export { ProfileProvider, ConnectableProfileProvider, QuickConnectProfileProvider, Profile, ConnectableProfile, PartialProfile, ProfileSettingsComponent, ProfileGroup, PartialProfileGroup } from './profileProvider'
 export { PromptModalComponent } from '../components/promptModal.component'
+export { MasterWorkspaceSyncProvider } from './masterWorkspace'
+export { buildNafranOSWorkspaceSnapshot, MasterWorkspaceRemoteSnapshot } from '../utils/masterWorkspace'
 export * from './commands'
 
 export { AppService } from '../services/app.service'

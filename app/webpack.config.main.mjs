@@ -44,6 +44,7 @@ const config = {
         'electron-updater': 'commonjs electron-updater',
         fs: 'commonjs fs',
         glasstron: 'commonjs glasstron',
+        keytar: 'commonjs keytar',
         mz: 'commonjs mz',
         '@npmcli/arborist': 'commonjs @npmcli/arborist',
         'node:os': 'commonjs os',

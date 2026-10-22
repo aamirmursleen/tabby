@@ -12,6 +12,7 @@ import { Window, WindowOptions } from './window'
 import { pluginManager } from './pluginManager'
 import { PTYManager } from './pty'
 import { configureChromiumPerformance } from './performance'
+import { loadNafranOSWorkspaceFeeds } from './nafranOSWorkspace'
 
 /* eslint-disable block-scoped-var */
 
@@ -37,6 +38,15 @@ export class Application {
         ipcMain.handle('app:save-config', async (event, config) => {
             await saveConfig(config)
             this.broadcastExcept('host:config-change', event.sender, config)
+        })
+
+        ipcMain.handle('app:load-nafran-os-workspace-feeds', async (event, force = false) => {
+            const senderURL = event.senderFrame?.url ?? event.sender.getURL()
+            const trustedWindow = this.windows.some(window => !window.isDestroyed() && window.webContents.id === event.sender.id)
+            if (!trustedWindow || !senderURL.startsWith('file://') || typeof force !== 'boolean') {
+                throw new Error('Blocked a Nafran OS API request from an unexpected page.')
+            }
+            return loadNafranOSWorkspaceFeeds(force)
         })
 
         ipcMain.on('app:register-global-hotkey', (_event, specs) => {

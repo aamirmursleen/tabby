@@ -7,15 +7,19 @@ const { loadDeclarations } = require('../../test/helpers/source.cjs')
 const copy = value => JSON.parse(JSON.stringify(value))
 
 const {
+    buildNafranOSWorkspaceSnapshot,
     buildMasterWorkspaceProjects,
     buildMasterWorkspaceSearchResults,
+    mergeMasterWorkspaceRemoteSnapshot,
     normalizeMasterWorkspaceMetadata,
     organizeFounderProjects,
 } = loadDeclarations(
     'tabby-core/src/utils/masterWorkspace.ts',
     [
+        'buildNafranOSWorkspaceSnapshot',
         'buildMasterWorkspaceProjects',
         'buildMasterWorkspaceSearchResults',
+        'mergeMasterWorkspaceRemoteSnapshot',
         'normalizeMasterWorkspaceMetadata',
         'organizeFounderProjects',
     ],
@@ -118,6 +122,60 @@ test('normalizes bounded work items and twelve months of revenue without trustin
     assert.equal(metadata.revenue.history.length, 12)
 })
 
+test('merges a bounded live Nafran OS snapshot while preserving founder registry fields', () => {
+    const merged = mergeMasterWorkspaceRemoteSnapshot(connections, {
+        mama: {
+            priority: 1,
+            description: 'Founder description stays local',
+            notes: 'Private notes stay local',
+            revenue: { currency: 'USD', currentMonthly: 100, history: [], status: 'manual' },
+        },
+    }, {
+        schemaVersion: 1,
+        generatedAt: '2026-10-22T16:44:20.569Z',
+        source: 'Nafran OS API',
+        projects: [
+            {
+                id: 'mamasign', name: 'MamaSign', aliases: ['MamaSign Dev'],
+                work: { total: 24, completed: 18, blocked: 1, overdue: 2 },
+                revenue: {
+                    currency: 'USD', currentMonthly: 537.04, status: 'live',
+                    source: 'Nafran OS API · Shopify owner share (30%)',
+                    updatedAt: '2026-10-22T16:43:00.000Z',
+                    history: [
+                        { month: '2026-09', amount: 1200 },
+                        { month: '2026-10', amount: 537.04 },
+                    ],
+                },
+                plane: { status: 'live', identifier: 'MAMA', updatedAt: '2026-10-22T16:44:20.569Z' },
+                health: 'healthy',
+                links: [{ label: 'Plane', url: 'https://portal.whitelabel.com.pk/mamasign/' }],
+            },
+            { id: 'unknown', name: 'Unknown project', revenue: { currentMonthly: 999999 } },
+        ],
+    })
+
+    assert.equal(merged.mama.description, 'Founder description stays local')
+    assert.equal(merged.mama.notes, 'Private notes stay local')
+    assert.equal(merged.mama.priority, 1)
+    assert.equal(merged.mama.work.total, 24)
+    assert.equal(merged.mama.revenue.currentMonthly, 537.04)
+    assert.equal(merged.mama.revenue.status, 'live')
+    assert.equal(merged.mama.plane.identifier, 'MAMA')
+    assert.equal(merged.mama.health, 'healthy')
+    assert.deepEqual(copy(merged.mama.links), [{ label: 'Plane', url: 'https://portal.whitelabel.com.pk/mamasign/' }])
+    assert.equal(merged.unknown, undefined)
+})
+
+test('rejects malformed or oversized remote workspace snapshots', () => {
+    const saved = { mama: { description: 'Keep me' } }
+    assert.deepEqual(copy(mergeMasterWorkspaceRemoteSnapshot(connections, saved, {
+        schemaVersion: 2,
+        generatedAt: 'not-a-date',
+        projects: [{ id: 'mama', revenue: { currentMonthly: Number.POSITIVE_INFINITY } }],
+    })), saved)
+})
+
 test('command search covers projects, connections, tmux names, folders and actions', () => {
     const projects = buildMasterWorkspaceProjects(connections, {}, Date.now())
     assert.deepEqual(copy(buildMasterWorkspaceSearchResults(projects, 'mamasign-queue').map(result => result.label)), ['Queue worker'])
@@ -175,7 +233,9 @@ test('the dashboard exposes real project navigation and command palette controls
     assert.match(template, /Summary/)
     assert.match(template, /Work items/)
     assert.match(template, /Revenue/)
-    assert.match(template, /Sync & relay/)
+    assert.match(template, /syncRemoteData\(\)/)
+    assert.match(template, /workspace\.syncSource/)
+    assert.match(template, /Sync & API/)
     assert.match(template, /Open as tab/)
     assert.match(template, /Knowledge · \/aamir/)
     assert.match(template, /aria-label='Search projects, servers, folders and commands'/)
@@ -190,4 +250,63 @@ test('the dashboard exposes real project navigation and command palette controls
     assert.match(workspaceService, /this\.app\.tabStateChanged\$\.subscribe\(\(\) => this\.refresh\(\)\)/)
     assert.doesNotMatch(workspaceService, /this\.app\.tabsChanged\$\.subscribe/)
     assert.match(terminalTab, /this\.sessionChanged\.next\(session\)\s+this\.recoveryStateChangedHint\.next\(\)/)
+})
+
+test('builds Plane work and owner-share revenue from sanitized Nafran OS API responses', () => {
+    const snapshot = buildNafranOSWorkspaceSnapshot({
+        generated_at: '2026-10-22T16:56:00.000Z',
+        plane: { workspaces: [{
+            label: 'CalendarJet', slug: 'calendarjet', state: 'connected',
+            work_items_total: 256, work_items_open: 12,
+            work_items_completed_or_cancelled: 244,
+            latest_update: '2026-10-21T21:35:27.000Z',
+            projects: [{ work_items_sampled: 256, work_items_total: 256, by_state_group: { completed: 244 } }],
+        }] },
+        project_signals: [{
+            workspace: 'CalendarJet', slug: 'calendarjet', deployment_warnings: 0,
+            public_checks: [{ label: 'CalendarJet', status: 'ok', checked_at: '2026-10-22T16:50:00.000Z' }],
+        }],
+    }, {
+        state: 'connected', generated_at: '2026-10-22T16:54:55.000Z',
+        stores: [{
+            store: 'calendarjet', project: 'CalendarJet', ok: true, state: 'connected',
+            generated_at: '2026-10-22T16:54:55.000Z', currency: 'USD',
+            monthly: [
+                { month: '2026-09', amounts_by_currency: { USD: { received_less_refunds: '3608.39' } } },
+                { month: '2026-10', amounts_by_currency: { USD: { received_less_refunds: '2569.42' } } },
+            ],
+        }],
+    }, {
+        business_scope: [{ project: 'CalendarJet', equity_pct: 50, relationship: 'part-owned' }],
+        project_aliases: {},
+    }, new Date('2026-10-22T17:00:00.000Z'))
+
+    assert.equal(snapshot.schemaVersion, 1)
+    assert.equal(snapshot.source, 'Nafran OS API')
+    assert.equal(snapshot.projects.length, 1)
+    assert.deepEqual(copy(snapshot.projects[0].work), { total: 256, completed: 244, blocked: 0, overdue: 0 })
+    assert.equal(snapshot.projects[0].plane.status, 'live')
+    assert.equal(snapshot.projects[0].health, 'healthy')
+    assert.equal(snapshot.projects[0].revenue.currentMonthly, 1284.71)
+    assert.deepEqual(copy(snapshot.projects[0].revenue.history), [
+        { month: '2026-09', amount: 1804.2 },
+        { month: '2026-10', amount: 1284.71 },
+    ])
+    assert.match(snapshot.projects[0].revenue.source, /owner share \(50%\)/)
+})
+
+test('the Nafran OS API provider is HTTPS-only, bounded, and keeps credentials in main-process Keychain access', () => {
+    const provider = fs.readFileSync(path.resolve(__dirname, '../../tabby-electron/src/services/nafranOSWorkspaceSyncProvider.service.ts'), 'utf8')
+    const mainAPI = fs.readFileSync(path.resolve(__dirname, '../../app/lib/nafranOSWorkspace.ts'), 'utf8')
+    const electronModule = fs.readFileSync(path.resolve(__dirname, '../../tabby-electron/src/index.ts'), 'utf8')
+
+    assert.match(provider, /ipcRenderer\.invoke\('app:load-nafran-os-workspace-feeds', force\)/)
+    assert.match(mainAPI, /https:\/\/os\.nafran\.com/)
+    assert.match(mainAPI, /CF-Access-Client-Id/)
+    assert.match(mainAPI, /CF-Access-Client-Secret/)
+    assert.match(mainAPI, /keytar\.getPassword/)
+    assert.match(mainAPI, /MAX_RESPONSE_BYTES/)
+    assert.match(mainAPI, /redirect:\s*'error'/)
+    assert.doesNotMatch(provider + mainAPI, /plane_api_|clientSecret\s*=\s*['"][^'"]+|clientId\s*=\s*['"][^'"]+/i)
+    assert.match(electronModule, /MasterWorkspaceSyncProvider[\s\S]*multi:\s*true/)
 })

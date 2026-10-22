@@ -168,6 +168,7 @@ h3 { color: var(--mw-text); font-size: 15px; }
 .revenue-months { display: flex; gap: 5px; margin-top: 6px; }
 .revenue-months span { flex: 1; color: var(--mw-dim); font-size: 9px; text-align: center; }
 .revenue-card p, .knowledge-summary p, .knowledge-document p, .command-help p { margin-top: 13px; padding-top: 12px; border-top: 1px solid rgba(151, 171, 188, .1); color: #a9b4bf; font-size: 12.5px; line-height: 1.55; }
+.sync-action { display: inline-flex; align-items: center; gap: 7px; margin-top: 8px; padding-left: 0; }
 .progress-value-large { margin-top: 11px; color: var(--mw-text); font-size: 39px; font-weight: 650; letter-spacing: -.03em; }
 .progress-track { height: 7px; margin-top: 10px; overflow: hidden; border-radius: 4px; background: rgba(151, 171, 188, .14); }
 .progress-track span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #36be83, #61d9a5); }

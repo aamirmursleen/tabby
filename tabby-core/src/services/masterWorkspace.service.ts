@@ -1,7 +1,8 @@
 import deepClone from 'clone-deep'
 import { BehaviorSubject } from 'rxjs'
-import { Injectable } from '@angular/core'
+import { Injectable, InjectFlags, Injector } from '@angular/core'
 
+import { MasterWorkspaceSyncProvider } from '../api/masterWorkspace'
 import { PartialProfile, Profile } from '../api/profileProvider'
 import { PlatformService } from '../api/platform'
 import { BaseTabComponent } from '../components/baseTab.component'
@@ -17,6 +18,8 @@ import {
     buildMasterWorkspaceProjects,
     MasterWorkspaceProject,
     MasterWorkspaceProjectMetadata,
+    MasterWorkspaceRemoteSnapshot,
+    mergeMasterWorkspaceRemoteSnapshot,
     normalizeMasterWorkspaceMetadata,
     organizeFounderProjects,
 } from '../utils/masterWorkspace'
@@ -34,19 +37,33 @@ export class MasterWorkspaceService {
     projects: MasterWorkspaceProject<BaseTabComponent>[] = []
     loading = true
     error = ''
+    syncLoading = false
+    syncError = ''
+    syncSource = 'Nafran OS API'
+    lastSyncedAt = ''
     readonly changed$ = new BehaviorSubject<void>(undefined)
     private refreshGeneration = 0
+    private remoteSnapshot: MasterWorkspaceRemoteSnapshot|null = null
+    private syncOperation: Promise<void>|null = null
+    private readonly syncProviders: MasterWorkspaceSyncProvider[]
 
     constructor (
         private app: AppService,
         private config: ConfigService,
         private profiles: ProfilesService,
         private platform: PlatformService,
+        injector: Injector,
     ) {
+        const providers = injector.get(MasterWorkspaceSyncProvider, null, InjectFlags.Optional) as unknown as MasterWorkspaceSyncProvider[]|null
+        this.syncProviders = providers ?? []
         this.app.activeTabChange$.subscribe(() => this.refresh())
         this.app.tabStateChanged$.subscribe(() => this.refresh())
         this.config.changed$.subscribe(() => this.refresh())
-        this.config.ready$.toPromise().then(() => this.refresh())
+        this.config.ready$.toPromise().then(async () => {
+            await this.refresh()
+            await this.syncRemoteData()
+            window.setInterval(() => this.syncRemoteData(), 60_000)
+        })
     }
 
     get settings (): MasterWorkspaceSettings {
@@ -70,7 +87,13 @@ export class MasterWorkspaceService {
             ))
             this.projects = buildMasterWorkspaceProjects(
                 connectionProjects,
-                this.config.store.masterWorkspace?.projects ?? {},
+                this.remoteSnapshot
+                    ? mergeMasterWorkspaceRemoteSnapshot(
+                        connectionProjects,
+                        this.config.store.masterWorkspace?.projects ?? {},
+                        this.remoteSnapshot,
+                    )
+                    : this.config.store.masterWorkspace?.projects ?? {},
                 Date.now(),
             )
             this.error = ''
@@ -81,6 +104,16 @@ export class MasterWorkspaceService {
                 this.loading = false
                 this.changed$.next()
             }
+        }
+    }
+
+    async syncRemoteData (force = false): Promise<void> {
+        if (this.syncOperation) { return this.syncOperation }
+        this.syncOperation = this.performRemoteSync(force)
+        try {
+            await this.syncOperation
+        } finally {
+            this.syncOperation = null
         }
     }
 
@@ -168,6 +201,38 @@ export class MasterWorkspaceService {
     async openLink (url: string): Promise<void> {
         if (!/^https?:\/\/[^\s]+$/i.test(url)) { return }
         await this.platform.openExternal(url)
+    }
+
+    private async performRemoteSync (force: boolean): Promise<void> {
+        if (!this.syncProviders.length) { return }
+        this.syncLoading = true
+        this.syncError = ''
+        this.changed$.next()
+        try {
+            let loaded: unknown|null = null
+            for (const provider of this.syncProviders) {
+                loaded = await provider.loadSnapshot(force)
+                if (loaded) { break }
+            }
+            if (!loaded || typeof loaded !== 'object' || Array.isArray(loaded)) {
+                throw new Error('Nafran OS API did not return a workspace snapshot.')
+            }
+            const snapshotValue = loaded as Record<string, unknown>
+            if (snapshotValue.schemaVersion !== 1 || typeof snapshotValue.generatedAt !== 'string'
+                || !Number.isFinite(Date.parse(snapshotValue.generatedAt))) {
+                throw new Error('Nafran OS API returned an unsupported workspace snapshot.')
+            }
+            const snapshot = snapshotValue as unknown as MasterWorkspaceRemoteSnapshot
+            this.remoteSnapshot = snapshot
+            this.syncSource = typeof snapshot.source === 'string' ? snapshot.source.slice(0, 120) : 'Nafran OS API'
+            this.lastSyncedAt = snapshot.generatedAt
+            await this.refresh()
+        } catch (error) {
+            this.syncError = error instanceof Error ? error.message : 'Could not sync the Nafran OS API.'
+        } finally {
+            this.syncLoading = false
+            this.changed$.next()
+        }
     }
 
     private selectLiveConnection (item: ActiveSessionItem<BaseTabComponent>): void {
