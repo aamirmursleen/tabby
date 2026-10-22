@@ -203,16 +203,25 @@
                             article.workspace-card.revenue-card
                                 .card-title-row
                                     span.card-title Revenue
-                                    small {{selectedProject.metadata.revenue.history.length}} months · {{formatMoney(revenueTotal(selectedProject), selectedProject.metadata.revenue.currency)}}
+                                    .revenue-period-toggle(role='group', aria-label='Revenue period')
+                                        button(type='button', [class.active]='revenuePeriod === "current"', (click)='selectRevenuePeriod("current")') This month
+                                        button(type='button', [class.active]='revenuePeriod === "previous"', (click)='selectRevenuePeriod("previous")') Last month
                                 .revenue-value
-                                    strong {{formatMoney(selectedProject.metadata.revenue.currentMonthly, selectedProject.metadata.revenue.currency)}}/mo
-                                    span.positive(*ngIf='revenueDelta(selectedProject) !== null') {{revenueDelta(selectedProject)}}% vs previous month
+                                    strong {{formatMoney(revenueAmount(selectedProject), selectedProject.metadata.revenue.currency)}}
+                                    span {{revenueMonthLabel(selectedProject)}}
+                                .revenue-rates(*ngIf='hasRevenueRate(selectedProject)')
+                                    span.rate-chip(*ngIf='revenueShareRate(selectedProject) !== null')
+                                        small Owner rate
+                                        strong {{revenueShareRate(selectedProject)}}%
+                                    span.rate-chip(*ngIf='revenueDelta(selectedProject) !== null')
+                                        small Change rate
+                                        strong([class.positive]='(revenueDelta(selectedProject) || 0) >= 0', [class.negative]='(revenueDelta(selectedProject) || 0) < 0') {{formatRevenueDelta(revenueDelta(selectedProject))}}
                                 .revenue-chart(*ngIf='selectedProject.metadata.revenue.history.length')
-                                    span(*ngFor='let bar of revenueBars(selectedProject)', [style.height.px]='bar.height', [title]='bar.month + ": " + formatMoney(bar.amount, selectedProject.metadata.revenue.currency)')
+                                    span(*ngFor='let bar of revenueBars(selectedProject)', [class.selected]='isSelectedRevenueMonth(selectedProject, bar.month)', [style.height.px]='bar.height', [title]='bar.month + ": " + formatMoney(bar.amount, selectedProject.metadata.revenue.currency)')
                                 .revenue-months(*ngIf='selectedProject.metadata.revenue.history.length')
                                     span(*ngFor='let bar of revenueBars(selectedProject)') {{bar.month.slice(-2)}}
                                 p(*ngIf='selectedProject.metadata.revenue.status === "unmapped"') Revenue is not connected yet. Add the trusted source in Registry.
-                                p(*ngIf='selectedProject.metadata.revenue.status !== "unmapped"') Source · {{selectedProject.metadata.revenue.source || 'Manual registry'}}
+                                p(*ngIf='selectedProject.metadata.revenue.status !== "unmapped"') {{selectedProject.metadata.revenue.history.length}} synced months · {{formatMoney(revenueTotal(selectedProject), selectedProject.metadata.revenue.currency)}} total · {{selectedProject.metadata.revenue.source || 'Manual registry'}}
                                 button.text-action.sync-action(type='button', [disabled]='workspace.syncLoading', (click)='syncRemoteData()')
                                     i.fas([class.fa-rotate]='!workspace.syncLoading', [class.fa-circle-notch]='workspace.syncLoading', [class.fa-spin]='workspace.syncLoading', aria-hidden='true')
                                     span {{workspace.syncLoading ? 'Syncing…' : 'Sync now'}}
@@ -248,10 +257,14 @@
                         .section-intro
                             span
                                 h2 Work items
-                                p Plane work for {{selectedProject.name}}, available from the last trusted snapshot.
+                                p Live Plane work for {{selectedProject.name}}. Details load only when this project is opened.
                             .section-metrics
-                                strong {{selectedProject.metadata.work.completed}}/{{selectedProject.metadata.work.total || 0}}
-                                small completed
+                                span
+                                    strong {{selectedProject.metadata.work.completed}}/{{selectedProject.metadata.work.total || 0}}
+                                    small completed
+                                button.mini-button(type='button', [disabled]='workspace.isLoadingWorkItems(selectedProject.id)', (click)='syncWorkItems()')
+                                    i.fas([class.fa-rotate]='!workspace.isLoadingWorkItems(selectedProject.id)', [class.fa-circle-notch]='workspace.isLoadingWorkItems(selectedProject.id)', [class.fa-spin]='workspace.isLoadingWorkItems(selectedProject.id)', aria-hidden='true')
+                                    span {{workspace.isLoadingWorkItems(selectedProject.id) ? 'Syncing…' : 'Sync items'}}
                         .work-table
                             .work-row.header
                                 span ID
@@ -265,7 +278,11 @@
                                     small(*ngIf='item.dueDate') Due {{item.dueDate}}
                                 span {{item.assignee || item.module || 'Unassigned'}}
                                 span.state-pill([class]='item.state') {{workStateLabel(item.state)}}
-                            .card-empty(*ngIf='!(selectedProject.metadata.work.items || []).length') Work totals are connected, but item details have not synced yet.
+                            .card-empty(*ngIf='workspace.isLoadingWorkItems(selectedProject.id)') Loading current work items from Plane…
+                            .card-empty.error-empty(*ngIf='!workspace.isLoadingWorkItems(selectedProject.id) && workspace.workItemsError(selectedProject.id)')
+                                span {{workspace.workItemsError(selectedProject.id)}}
+                                button.mini-button(type='button', (click)='syncWorkItems()') Retry
+                            .card-empty(*ngIf='!workspace.isLoadingWorkItems(selectedProject.id) && workspace.hasLoadedWorkItems(selectedProject.id) && !(selectedProject.metadata.work.items || []).length') No work items are currently available in this Plane workspace.
 
                     section.section-panel(*ngIf='projectSection === "knowledge"')
                         .section-intro

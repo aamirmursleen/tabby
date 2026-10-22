@@ -13,6 +13,7 @@ import { MasterWorkspaceService, MasterWorkspaceSettings } from '../services/mas
 
 type WorkspaceView = 'overview'|'project'|'work'|'knowledge'|'connections'|'settings'
 type ProjectSection = 'summary'|'work'|'knowledge'|'connections'|'commands'|'activity'
+type RevenuePeriod = 'current'|'previous'
 
 interface ProjectDraft {
     priority: number
@@ -51,6 +52,7 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
     commandQuery = ''
     commandPaletteOpen = false
     editorOpen = false
+    revenuePeriod: RevenuePeriod = 'current'
     saving = false
     busyConnectionKey: string|null = null
     error = ''
@@ -58,6 +60,8 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
     draft: ProjectDraft = this.emptyDraft()
     settingsDraft: MasterWorkspaceSettings = { relayUrl: '', workspaceSlug: '' }
     private readonly moneyFormatters = new Map<string, Intl.NumberFormat>()
+    private readonly revenueMonthLabels = new Map<string, string>()
+    private readonly revenueShareRateCache = new WeakMap<MasterWorkspaceProject<BaseTabComponent>, number|null>()
     private readonly revenueBarCache = new WeakMap<MasterWorkspaceProject<BaseTabComponent>, { month: string, amount: number, height: number }[]>()
     private readonly projectTagCache = new WeakMap<MasterWorkspaceProject<BaseTabComponent>, string[]>()
     private readonly projectTagCatalog: Partial<Record<string, string[]>> = {
@@ -148,11 +152,15 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
         this.selectedProject = project
         this.view = 'project'
         this.projectSection = 'summary'
+        this.revenuePeriod = 'current'
         this.commandPaletteOpen = false
     }
 
     showProjectSection (section: ProjectSection): void {
         this.projectSection = section
+        if (section === 'work' && this.selectedProject) {
+            void this.workspace.syncProjectWorkItems(this.selectedProject)
+        }
     }
 
     openRegistry (): void {
@@ -296,7 +304,15 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
         this.error = ''
         this.status = ''
         await this.workspace.syncRemoteData(true)
+        if (this.selectedProject && this.projectSection === 'work') {
+            await this.workspace.syncProjectWorkItems(this.selectedProject, true)
+        }
         if (!this.workspace.syncError) { this.status = 'Project work and revenue synced from Nafran OS' }
+    }
+
+    async syncWorkItems (force = true): Promise<void> {
+        if (!this.selectedProject) { return }
+        await this.workspace.syncProjectWorkItems(this.selectedProject, force)
     }
 
     openCommandPalette (): void {
@@ -353,10 +369,64 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
         return project.metadata.revenue.history.reduce((total, entry) => total + entry.amount, 0)
     }
 
-    revenueDelta (project: MasterWorkspaceProject<BaseTabComponent>): number|null {
-        const history = project.metadata.revenue.history
-        if (history.length < 2 || history[history.length - 2].amount === 0) { return null }
-        return Math.round((history[history.length - 1].amount - history[history.length - 2].amount) / history[history.length - 2].amount * 100)
+    selectRevenuePeriod (period: RevenuePeriod): void {
+        this.revenuePeriod = period
+    }
+
+    revenueAmount (project: MasterWorkspaceProject<BaseTabComponent>, period = this.revenuePeriod): number {
+        return this.revenueEntry(project, period)?.entry.amount ?? 0
+    }
+
+    revenueMonth (project: MasterWorkspaceProject<BaseTabComponent>, period = this.revenuePeriod): string {
+        return this.revenueEntry(project, period)?.entry.month ?? ''
+    }
+
+    revenueMonthLabel (project: MasterWorkspaceProject<BaseTabComponent>, period = this.revenuePeriod): string {
+        const month = this.revenueMonth(project, period)
+        if (!month) { return period === 'current' ? 'This month' : 'Last month' }
+        const cached = this.revenueMonthLabels.get(month)
+        if (cached) { return cached }
+        const date = new Date(`${month}-01T00:00:00`)
+        const label = Number.isFinite(date.getTime())
+            ? date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+            : month
+        this.revenueMonthLabels.set(month, label)
+        return label
+    }
+
+    revenueDelta (project: MasterWorkspaceProject<BaseTabComponent>, period = this.revenuePeriod): number|null {
+        const selected = this.revenueEntry(project, period)
+        if (!selected || selected.index < 1) { return null }
+        const previous = project.metadata.revenue.history[selected.index - 1].amount
+        if (previous === 0) { return null }
+        return Math.round((selected.entry.amount - previous) / previous * 100)
+    }
+
+    formatRevenueDelta (value: number|null): string {
+        if (value === null) { return '—' }
+        return `${value > 0 ? '+' : ''}${value}%`
+    }
+
+    revenueShareRate (project: MasterWorkspaceProject<BaseTabComponent>): number|null {
+        const cached = this.revenueShareRateCache.get(project)
+        if (cached !== undefined) { return cached }
+        const match = project.metadata.revenue.source?.match(/owner share \(([0-9]+(?:\.[0-9]+)?)%\)/i)
+        if (!match) {
+            this.revenueShareRateCache.set(project, null)
+            return null
+        }
+        const value = Number(match[1])
+        const rate = Number.isFinite(value) ? value : null
+        this.revenueShareRateCache.set(project, rate)
+        return rate
+    }
+
+    hasRevenueRate (project: MasterWorkspaceProject<BaseTabComponent>): boolean {
+        return this.revenueShareRate(project) !== null || this.revenueDelta(project) !== null
+    }
+
+    isSelectedRevenueMonth (project: MasterWorkspaceProject<BaseTabComponent>, month: string): boolean {
+        return this.revenueMonth(project) === month
     }
 
     formatMoney (value: number, currency: string): string {
@@ -395,6 +465,22 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
                 ?? this.projects[0]
             this.view = 'project'
         }
+    }
+
+    private revenueEntry (
+        project: MasterWorkspaceProject<BaseTabComponent>,
+        period: RevenuePeriod,
+    ): { entry: { month: string, amount: number }, index: number }|null {
+        const history = project.metadata.revenue.history
+        if (!history.length) { return null }
+        const date = new Date()
+        date.setDate(1)
+        if (period === 'previous') { date.setMonth(date.getMonth() - 1) }
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+        let index = history.findIndex(entry => entry.month === key)
+        if (index < 0) { index = history.length - (period === 'current' ? 1 : 2) }
+        if (index < 0) { return null }
+        return { entry: history[index], index }
     }
 
     private revenueHistoryFromDraft (value: string): { month: string, amount: number }[] {

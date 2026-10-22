@@ -11,6 +11,10 @@ const __dirname = url.fileURLToPath(new URL('.', import.meta.url))
 
 
 let target = path.resolve(__dirname, '../builtin-plugins')
+const yarnCommand = sh.which('yarn') ? 'yarn' : 'corepack yarn'
+if (!sh.which('yarn') && !sh.which('corepack')) {
+    throw new Error('Packaging built-in plugins requires Yarn or Corepack.')
+}
 sh.mkdir('-p', target)
 fs.writeFileSync(path.join(target, 'package.json'), '{}')
 sh.cd(target)
@@ -22,7 +26,7 @@ vars.builtinPlugins.forEach(plugin => {
     sh.cp('-r', path.join('..', plugin), '.')
     sh.rm('-rf', path.join(plugin, 'node_modules'))
     sh.cd(plugin)
-    sh.exec(`yarn install --force --production`, { fatal: true })
+    sh.exec(`${yarnCommand} install --force --production`, { fatal: true })
 
 
     log.info('rebuild', 'native')

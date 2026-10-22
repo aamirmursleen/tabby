@@ -159,12 +159,22 @@ h3 { color: var(--mw-text); font-size: 15px; }
 .mini-button { align-self: flex-start; min-height: 29px; margin-top: 5px; padding: 0 10px; font-size: 12px; }
 .card-empty { padding: 22px 14px; color: var(--mw-muted); font-size: 12.5px; line-height: 1.5; text-align: center; }
 
-.revenue-value { display: flex; align-items: baseline; gap: 10px; margin-top: 13px; }
+.revenue-period-toggle { display: inline-flex; padding: 3px; border: 1px solid var(--mw-border); border-radius: 8px; background: rgba(0, 0, 0, .18); letter-spacing: 0; text-transform: none; }
+.revenue-period-toggle button { height: 26px; padding: 0 9px; border-radius: 5px; background: transparent; color: var(--mw-muted); font-size: 11.5px; font-weight: 650; cursor: pointer; }
+.revenue-period-toggle button:hover { color: var(--mw-text); }
+.revenue-period-toggle button.active { background: rgba(94, 168, 245, .17); color: #bcdcff; box-shadow: inset 0 0 0 1px rgba(94, 168, 245, .2); }
+.revenue-value { display: flex; align-items: baseline; gap: 10px; margin-top: 15px; }
 .revenue-value strong { color: var(--mw-text); font-size: 34px; font-weight: 650; letter-spacing: -.03em; }
 .positive { color: var(--mw-green) !important; }
+.negative { color: var(--mw-red) !important; }
 .revenue-value span { font-size: 13.5px; }
+.revenue-rates { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.rate-chip { display: inline-flex; min-width: 105px; align-items: baseline; justify-content: space-between; gap: 9px; padding: 8px 10px; border: 1px solid var(--mw-border); border-radius: 8px; background: rgba(0, 0, 0, .13); }
+.rate-chip small { color: var(--mw-muted); font-size: 10.5px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.rate-chip strong { color: var(--mw-text); font-size: 14px; font-variant-numeric: tabular-nums; }
 .revenue-chart { display: flex; height: 76px; align-items: flex-end; gap: 5px; margin-top: 12px; }
-.revenue-chart span { min-height: 4px; flex: 1; border-radius: 3px 3px 1px 1px; background: var(--mw-green); }
+.revenue-chart span { min-height: 4px; flex: 1; border-radius: 3px 3px 1px 1px; background: rgba(51, 207, 134, .42); }
+.revenue-chart span.selected { background: var(--mw-green); box-shadow: 0 0 10px rgba(51, 207, 134, .22); }
 .revenue-months { display: flex; gap: 5px; margin-top: 6px; }
 .revenue-months span { flex: 1; color: var(--mw-dim); font-size: 9px; text-align: center; }
 .revenue-card p, .knowledge-summary p, .knowledge-document p, .command-help p { margin-top: 13px; padding-top: 12px; border-top: 1px solid rgba(151, 171, 188, .1); color: #a9b4bf; font-size: 12.5px; line-height: 1.55; }
@@ -185,9 +195,11 @@ h3 { color: var(--mw-text); font-size: 15px; }
 .section-panel, .overview-page, .global-page { min-height: 100%; }
 .section-intro, .page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
 .section-intro p, .page-heading p { max-width: 760px; margin-top: 6px; color: #93a0ac; font-size: 13.5px; line-height: 1.5; }
-.section-metrics { display: grid; text-align: right; }
+.section-metrics { display: flex; align-items: center; gap: 14px; text-align: right; }
+.section-metrics > span { display: grid; }
 .section-metrics strong { font-size: 20px; }
 .section-metrics small { color: var(--mw-muted); }
+.section-metrics .mini-button { margin-top: 0; }
 .work-table { overflow: hidden; border: 1px solid var(--mw-border); border-radius: 12px; }
 .work-row { display: grid; min-height: 58px; align-items: center; grid-template-columns: 92px minmax(260px, 1fr) minmax(130px, .45fr) 120px; gap: 16px; padding: 10px 16px; border-top: 1px solid rgba(151, 171, 188, .1); color: var(--mw-copy); }
 .workspace-card .work-row { grid-template-columns: 74px minmax(0, 1fr) 110px; padding-right: 0; padding-left: 0; }
@@ -200,6 +212,7 @@ h3 { color: var(--mw-text); font-size: 15px; }
 .state-pill.done { background: rgba(51, 207, 134, .1); color: var(--mw-green); }
 .state-pill.blocked { background: rgba(255, 82, 102, .1); color: var(--mw-red); }
 .state-pill.in_progress { background: rgba(94, 168, 245, .1); color: var(--mw-blue); }
+.error-empty { display: flex; align-items: center; justify-content: center; gap: 10px; color: #ffabb5; }
 .knowledge-document { max-width: 900px; }
 .knowledge-document h3 { margin-top: 24px; }
 .connections-grid { grid-template-columns: repeat(3, minmax(240px, 1fr)); }

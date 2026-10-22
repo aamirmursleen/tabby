@@ -13,6 +13,7 @@ import { pluginManager } from './pluginManager'
 import { PTYManager } from './pty'
 import { configureChromiumPerformance } from './performance'
 import { loadNafranOSWorkspaceFeeds } from './nafranOSWorkspace'
+import { loadPlaneWorkspaceWorkItems } from './planeWorkspace'
 
 /* eslint-disable block-scoped-var */
 
@@ -47,6 +48,15 @@ export class Application {
                 throw new Error('Blocked a Nafran OS API request from an unexpected page.')
             }
             return loadNafranOSWorkspaceFeeds(force)
+        })
+
+        ipcMain.handle('app:load-plane-work-items', async (event, workspaceSlug, force = false) => {
+            const senderURL = event.senderFrame?.url ?? event.sender.getURL()
+            const trustedWindow = this.windows.some(window => !window.isDestroyed() && window.webContents.id === event.sender.id)
+            if (!trustedWindow || !senderURL.startsWith('file://') || typeof workspaceSlug !== 'string' || typeof force !== 'boolean') {
+                throw new Error('Blocked a Plane API request from an unexpected page.')
+            }
+            return loadPlaneWorkspaceWorkItems(workspaceSlug, force)
         })
 
         ipcMain.on('app:register-global-hotkey', (_event, specs) => {

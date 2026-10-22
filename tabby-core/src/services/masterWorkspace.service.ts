@@ -19,6 +19,7 @@ import {
     MasterWorkspaceProject,
     MasterWorkspaceProjectMetadata,
     MasterWorkspaceRemoteSnapshot,
+    MasterWorkspaceWorkItem,
     mergeMasterWorkspaceRemoteSnapshot,
     normalizeMasterWorkspaceMetadata,
     organizeFounderProjects,
@@ -46,6 +47,10 @@ export class MasterWorkspaceService {
     private remoteSnapshot: MasterWorkspaceRemoteSnapshot|null = null
     private syncOperation: Promise<void>|null = null
     private readonly syncProviders: MasterWorkspaceSyncProvider[]
+    private readonly projectWorkItems = new Map<string, MasterWorkspaceWorkItem[]>()
+    private readonly workItemOperations = new Map<string, Promise<void>>()
+    private readonly loadingWorkItemProjects = new Set<string>()
+    private readonly workItemErrors = new Map<string, string>()
 
     constructor (
         private app: AppService,
@@ -114,6 +119,31 @@ export class MasterWorkspaceService {
             await this.syncOperation
         } finally {
             this.syncOperation = null
+        }
+    }
+
+    hasLoadedWorkItems (projectID: string): boolean {
+        return this.projectWorkItems.has(projectID)
+    }
+
+    isLoadingWorkItems (projectID: string): boolean {
+        return this.loadingWorkItemProjects.has(projectID)
+    }
+
+    workItemsError (projectID: string): string {
+        return this.workItemErrors.get(projectID) ?? ''
+    }
+
+    async syncProjectWorkItems (project: MasterWorkspaceProject<BaseTabComponent>, force = false): Promise<void> {
+        if (!force && this.projectWorkItems.has(project.id)) { return }
+        const active = this.workItemOperations.get(project.id)
+        if (active) { return active }
+        const operation = this.performWorkItemSync(project, force)
+        this.workItemOperations.set(project.id, operation)
+        try {
+            await operation
+        } finally {
+            this.workItemOperations.delete(project.id)
         }
     }
 
@@ -223,6 +253,7 @@ export class MasterWorkspaceService {
                 throw new Error('Nafran OS API returned an unsupported workspace snapshot.')
             }
             const snapshot = snapshotValue as unknown as MasterWorkspaceRemoteSnapshot
+            this.applyCachedWorkItems(snapshot)
             this.remoteSnapshot = snapshot
             this.syncSource = typeof snapshot.source === 'string' ? snapshot.source.slice(0, 120) : 'Nafran OS API'
             this.lastSyncedAt = snapshot.generatedAt
@@ -232,6 +263,58 @@ export class MasterWorkspaceService {
         } finally {
             this.syncLoading = false
             this.changed$.next()
+        }
+    }
+
+    private async performWorkItemSync (project: MasterWorkspaceProject<BaseTabComponent>, force: boolean): Promise<void> {
+        const workspaceSlug = project.metadata.plane.workspaceSlug
+        if (!workspaceSlug) {
+            this.workItemErrors.set(project.id, 'This project is not mapped to a connected Plane workspace.')
+            this.changed$.next()
+            return
+        }
+        const provider = this.syncProviders.find(candidate => typeof candidate.loadWorkItems === 'function')
+        if (!provider?.loadWorkItems) {
+            this.workItemErrors.set(project.id, 'Detailed Plane work-item sync is unavailable in this build.')
+            this.changed$.next()
+            return
+        }
+
+        this.loadingWorkItemProjects.add(project.id)
+        this.workItemErrors.delete(project.id)
+        this.changed$.next()
+        try {
+            const loaded = await provider.loadWorkItems(workspaceSlug, force)
+            const normalized = normalizeMasterWorkspaceMetadata({
+                work: { ...project.metadata.work, items: Array.isArray(loaded) ? loaded : [] },
+            }).work
+            const items = normalized?.items ?? []
+            this.projectWorkItems.set(project.id, items)
+            if (this.remoteSnapshot) {
+                this.applyCachedWorkItems(this.remoteSnapshot)
+                await this.refresh()
+            }
+        } catch (error) {
+            this.workItemErrors.set(
+                project.id,
+                error instanceof Error ? error.message : 'Could not sync detailed Plane work items.',
+            )
+        } finally {
+            this.loadingWorkItemProjects.delete(project.id)
+            this.changed$.next()
+        }
+    }
+
+    private applyCachedWorkItems (snapshot: MasterWorkspaceRemoteSnapshot): void {
+        const identity = (value: unknown): string => typeof value === 'string'
+            ? value.toLocaleLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 160)
+            : ''
+        for (const remote of snapshot.projects) {
+            const identities = [remote.id, remote.name, ...(remote.aliases ?? [])].map(identity).filter(Boolean)
+            const cached = [...this.projectWorkItems.entries()].find(([projectID]) => identities.includes(identity(projectID)))
+            if (!cached) { continue }
+            const work = remote.work ?? { total: cached[1].length, completed: 0, blocked: 0, overdue: 0 }
+            remote.work = { ...work, items: cached[1] }
         }
     }
 

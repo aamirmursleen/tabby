@@ -48,6 +48,7 @@ export interface MasterWorkspaceProjectMetadata {
         status: MasterWorkspacePlaneStatus
         identifier?: string
         projectId?: string
+        workspaceSlug?: string
         updatedAt?: string
     }
     links?: { label: string, url: string }[]
@@ -185,6 +186,7 @@ export function buildNafranOSWorkspaceSnapshot (
         project.plane = {
             status: connected ? 'live' : 'failing',
             identifier: text(workspace.slug || workspace.label).toLocaleUpperCase().slice(0, 32),
+            workspaceSlug: text(workspace.slug).toLocaleLowerCase().slice(0, 120),
         }
         if (updatedAt) { project.plane.updatedAt = updatedAt }
         const checks = list(signal.public_checks)
@@ -416,9 +418,11 @@ export function normalizeMasterWorkspaceMetadata (value: unknown): MasterWorkspa
         result.plane = { status: allowed.has(input.plane.status) ? input.plane.status : 'unmapped' }
         const identifier = cleanText(input.plane.identifier, 32)
         const projectId = cleanText(input.plane.projectId, 200)
+        const workspaceSlug = cleanText(input.plane.workspaceSlug, 120)?.toLocaleLowerCase()
         const updatedAt = cleanText(input.plane.updatedAt, 64)
         if (identifier) { result.plane.identifier = identifier }
         if (projectId) { result.plane.projectId = projectId }
+        if (workspaceSlug && /^[a-z0-9][a-z0-9-]{0,119}$/.test(workspaceSlug)) { result.plane.workspaceSlug = workspaceSlug }
         if (updatedAt && Number.isFinite(Date.parse(updatedAt))) { result.plane.updatedAt = updatedAt }
     }
 

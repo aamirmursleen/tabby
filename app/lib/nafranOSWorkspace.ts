@@ -1,4 +1,4 @@
-import * as keytar from 'keytar'
+import { readKeychainCredential } from './keychainCredential'
 
 const NAFRAN_OS_ORIGIN = 'https://os.nafran.com'
 const KEYCHAIN_SERVICE = 'com.aamirmursleen.terminal.nafran-os-api'
@@ -29,7 +29,7 @@ let activeRequest: Promise<NafranOSWorkspaceFeeds>|null = null
 async function loadNafranCredential (): Promise<AccessCredential> {
     let stored: string|null = null
     try {
-        stored = await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+        stored = await readKeychainCredential(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
     } catch {
         throw new Error('Aamir Terminal could not read its Nafran OS API credential from macOS Keychain.')
     }
