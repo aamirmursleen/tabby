@@ -287,16 +287,83 @@
                     section.section-panel(*ngIf='projectSection === "knowledge"')
                         .section-intro
                             span
-                                h2 Knowledge · /aamir
-                                p Current project context from the registered server folder.
-                            span.knowledge-state([class]='selectedProject.metadata.knowledge.status') {{selectedProject.metadata.knowledge.status}}
-                        article.workspace-card.knowledge-document
-                            code {{selectedProject.metadata.knowledge.path}}
-                            h3 Founder notes
-                            p {{selectedProject.metadata.notes || 'No indexed summary is available yet. Use Scan server after the secure relay is configured.'}}
-                            button.mini-button(type='button', (click)='scanProject(selectedProject)')
-                                i.fas.fa-rotate(aria-hidden='true')
-                                span Refresh knowledge
+                                h2 My knowledge
+                                p Private project context, notes and useful links saved with this project.
+                            .knowledge-header-actions
+                                button.action-button(type='button', (click)='openKnowledgeNoteEditor()')
+                                    i.fas.fa-note-sticky(aria-hidden='true')
+                                    span {{selectedProject.metadata.notes ? 'Edit note' : 'Add note'}}
+                                button.action-button.primary(type='button', (click)='openKnowledgeLinkEditor()')
+                                    i.fas.fa-link(aria-hidden='true')
+                                    span Add link
+                        .knowledge-grid
+                            article.workspace-card.knowledge-note-card
+                                .card-title-row
+                                    span.card-title Founder note
+                                    small Saved locally · {{selectedProject.name}}
+                                p.knowledge-note(*ngIf='selectedProject.metadata.notes') {{selectedProject.metadata.notes}}
+                                .knowledge-empty(*ngIf='!selectedProject.metadata.notes && knowledgeEditorMode !== "note"')
+                                    i.far.fa-note-sticky(aria-hidden='true')
+                                    strong Keep the context that matters
+                                    span Add decisions, current focus, useful commands or the next action for this project.
+                                    button.text-action(type='button', (click)='openKnowledgeNoteEditor()') Add note
+                                form.knowledge-editor(*ngIf='knowledgeEditorMode === "note"', (ngSubmit)='saveKnowledgeNote()')
+                                    label.field-label
+                                        span Project note
+                                        textarea(name='knowledgeNote', [(ngModel)]='knowledgeNoteDraft', rows='9', maxlength='20000', placeholder='Decisions, context, current focus, useful commands and next actions…')
+                                    .knowledge-error(*ngIf='knowledgeError') {{knowledgeError}}
+                                    .knowledge-editor-footer
+                                        small {{knowledgeNoteDraft.length | number}} / 20,000
+                                        span
+                                            button.action-button(type='button', [disabled]='saving', (click)='cancelKnowledgeEditor()') Cancel
+                                            button.action-button.primary(type='submit', [disabled]='saving') {{saving ? 'Saving…' : 'Save note'}}
+
+                            article.workspace-card.knowledge-links-card
+                                .card-title-row
+                                    span.card-title Saved links
+                                    small {{selectedProject.metadata.links.length}} {{selectedProject.metadata.links.length === 1 ? 'link' : 'links'}}
+                                .knowledge-link-list(*ngIf='selectedProject.metadata.links.length')
+                                    .knowledge-link-row(*ngFor='let link of selectedProject.metadata.links; let index = index')
+                                        button.knowledge-link-main(type='button', (click)='workspace.openLink(link.url)', [title]='link.url')
+                                            span.knowledge-link-icon
+                                                i.fas.fa-link(aria-hidden='true')
+                                            span
+                                                strong {{link.label}}
+                                                small {{link.url}}
+                                            i.fas.fa-arrow-up-right-from-square(aria-hidden='true')
+                                        span.knowledge-link-actions
+                                            button.icon-button(type='button', title='Edit link', aria-label='Edit link', (click)='openKnowledgeLinkEditor(index)')
+                                                i.fas.fa-pen(aria-hidden='true')
+                                            button.icon-button.danger-action(type='button', title='Remove link', aria-label='Remove link', [disabled]='saving', (click)='removeKnowledgeLink(index)')
+                                                i.fas.fa-trash(aria-hidden='true')
+                                .knowledge-empty(*ngIf='!selectedProject.metadata.links.length && knowledgeEditorMode !== "link"')
+                                    i.fas.fa-link(aria-hidden='true')
+                                    strong Keep every useful project link together
+                                    span Save dashboards, documentation, repositories, designs or production URLs.
+                                    button.text-action(type='button', (click)='openKnowledgeLinkEditor()') Add link
+                                form.knowledge-editor(*ngIf='knowledgeEditorMode === "link"', (ngSubmit)='saveKnowledgeLink()')
+                                    label.field-label
+                                        span Link name
+                                        input(type='text', name='knowledgeLinkLabel', [(ngModel)]='knowledgeLinkDraft.label', maxlength='80', placeholder='Production dashboard')
+                                    label.field-label
+                                        span URL
+                                        input(type='url', name='knowledgeLinkURL', [(ngModel)]='knowledgeLinkDraft.url', maxlength='2048', placeholder='https://…')
+                                    .knowledge-error(*ngIf='knowledgeError') {{knowledgeError}}
+                                    .knowledge-editor-footer
+                                        small HTTP and HTTPS links only
+                                        span
+                                            button.action-button(type='button', [disabled]='saving', (click)='cancelKnowledgeEditor()') Cancel
+                                            button.action-button.primary(type='submit', [disabled]='saving') {{saving ? 'Saving…' : knowledgeEditingLinkIndex === null ? 'Save link' : 'Update link'}}
+
+                            article.workspace-card.knowledge-source-card
+                                .card-title-row
+                                    span.card-title Server knowledge
+                                    span.knowledge-state([class]='selectedProject.metadata.knowledge.status') {{selectedProject.metadata.knowledge.status}}
+                                code {{selectedProject.metadata.knowledge.path}}
+                                p Current project context from the registered server folder. Your note and saved links stay local when server data refreshes.
+                                button.mini-button(type='button', (click)='scanProject(selectedProject)')
+                                    i.fas.fa-rotate(aria-hidden='true')
+                                    span Refresh knowledge
 
                     section.section-panel(*ngIf='projectSection === "connections"')
                         .section-intro

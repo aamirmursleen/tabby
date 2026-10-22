@@ -427,12 +427,13 @@ export function normalizeMasterWorkspaceMetadata (value: unknown): MasterWorkspa
     }
 
     if (Array.isArray(input.links)) {
-        result.links = input.links.slice(0, 24).flatMap(link => {
+        const links = input.links.slice(0, 24).flatMap(link => {
             const label = cleanText(link?.label, 80)
             const url = cleanText(link?.url, 2048)
             if (!label || !url) { return [] }
             return /^https?:\/\/[^\s]+$/i.test(url) ? [{ label, url }] : []
         })
+        result.links = links.filter((link, index) => links.findIndex(candidate => candidate.url === link.url) === index)
     }
 
     if (['healthy', 'degraded', 'down', 'unknown'].includes(input.health)) {
@@ -589,7 +590,14 @@ export function buildMasterWorkspaceSearchResults<T> (
     ]
     const results: MasterWorkspaceSearchResult<T>[] = actions.filter(action => !terms.length || matches(`${action.label} ${action.detail}`))
     for (const project of projects) {
-        const projectText = `${project.name} ${project.metadata.description} ${project.metadata.plane.identifier ?? ''}`
+        const projectText = [
+            project.name,
+            project.metadata.description,
+            project.metadata.notes,
+            project.metadata.knowledge.path,
+            project.metadata.plane.identifier ?? '',
+            ...project.metadata.links.flatMap(link => [link.label, link.url]),
+        ].join(' ')
         if (!terms.length || matches(projectText)) {
             results.push({
                 key: `project:${project.id}`, kind: 'project', label: project.name,

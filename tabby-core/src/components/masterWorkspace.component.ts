@@ -14,6 +14,7 @@ import { MasterWorkspaceService, MasterWorkspaceSettings } from '../services/mas
 type WorkspaceView = 'overview'|'project'|'work'|'knowledge'|'connections'|'settings'
 type ProjectSection = 'summary'|'work'|'knowledge'|'connections'|'commands'|'activity'
 type RevenuePeriod = 'current'|'previous'
+type KnowledgeEditorMode = 'note'|'link'|null
 
 interface ProjectDraft {
     priority: number
@@ -30,6 +31,11 @@ interface ProjectDraft {
     revenueCurrent: number
     revenueSource: string
     revenueHistory: string
+}
+
+interface KnowledgeLinkDraft {
+    label: string
+    url: string
 }
 
 @Component({
@@ -57,6 +63,11 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
     busyConnectionKey: string|null = null
     error = ''
     status = ''
+    knowledgeEditorMode: KnowledgeEditorMode = null
+    knowledgeNoteDraft = ''
+    knowledgeLinkDraft: KnowledgeLinkDraft = { label: '', url: '' }
+    knowledgeEditingLinkIndex: number|null = null
+    knowledgeError = ''
     draft: ProjectDraft = this.emptyDraft()
     settingsDraft: MasterWorkspaceSettings = { relayUrl: '', workspaceSlug: '' }
     private readonly moneyFormatters = new Map<string, Intl.NumberFormat>()
@@ -102,6 +113,9 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
             } else if (this.editorOpen) {
                 this.editorOpen = false
                 event.preventDefault()
+            } else if (this.knowledgeEditorMode) {
+                this.cancelKnowledgeEditor()
+                event.preventDefault()
             } else if (this.view === 'project') {
                 this.showView('overview')
                 event.preventDefault()
@@ -120,7 +134,14 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
         const terms = this.projectQuery.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
         if (!terms.length) { return this.projects }
         return this.projects.filter(project => {
-            const text = `${project.name} ${project.metadata.description} ${project.connections.map(connection => connection.label).join(' ')}`.toLocaleLowerCase()
+            const text = [
+                project.name,
+                project.metadata.description,
+                project.metadata.notes,
+                project.metadata.knowledge.path,
+                ...project.metadata.links.flatMap(link => [link.label, link.url]),
+                ...project.connections.map(connection => connection.label),
+            ].join(' ').toLocaleLowerCase()
             return terms.every(term => text.includes(term))
         })
     }
@@ -153,6 +174,7 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
         this.view = 'project'
         this.projectSection = 'summary'
         this.revenuePeriod = 'current'
+        this.cancelKnowledgeEditor()
         this.commandPaletteOpen = false
     }
 
@@ -284,6 +306,88 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
         } finally {
             this.saving = false
         }
+    }
+
+    openKnowledgeNoteEditor (): void {
+        if (!this.selectedProject) { return }
+        this.knowledgeNoteDraft = this.selectedProject.metadata.notes
+        this.knowledgeEditorMode = 'note'
+        this.knowledgeEditingLinkIndex = null
+        this.knowledgeError = ''
+    }
+
+    openKnowledgeLinkEditor (index: number|null = null): void {
+        if (!this.selectedProject) { return }
+        const link = index === null ? null : this.selectedProject.metadata.links[index]
+        this.knowledgeLinkDraft = link ? { ...link } : { label: '', url: '' }
+        this.knowledgeEditorMode = 'link'
+        this.knowledgeEditingLinkIndex = link ? index : null
+        this.knowledgeError = ''
+    }
+
+    cancelKnowledgeEditor (): void {
+        this.knowledgeEditorMode = null
+        this.knowledgeEditingLinkIndex = null
+        this.knowledgeError = ''
+    }
+
+    async saveKnowledgeNote (): Promise<void> {
+        const project = this.selectedProject
+        if (!project || this.saving) { return }
+        const metadata: MasterWorkspaceProjectMetadata = {
+            ...project.metadata,
+            notes: this.knowledgeNoteDraft,
+            lastActivityAt: new Date().toISOString(),
+        }
+        await this.saveKnowledgeMetadata(project, metadata, 'Project note saved')
+    }
+
+    async saveKnowledgeLink (): Promise<void> {
+        const project = this.selectedProject
+        if (!project || this.saving) { return }
+        const label = this.knowledgeLinkDraft.label.trim()
+        const url = this.knowledgeLinkDraft.url.trim()
+        if (!label) {
+            this.knowledgeError = 'Give this link a name.'
+            return
+        }
+        if (!/^https?:\/\/[^\s]+$/i.test(url)) {
+            this.knowledgeError = 'Enter a complete http:// or https:// link.'
+            return
+        }
+        if (this.knowledgeEditingLinkIndex === null && project.metadata.links.length >= 24) {
+            this.knowledgeError = 'A project can have up to 24 saved links.'
+            return
+        }
+        const duplicateIndex = project.metadata.links.findIndex(link => link.url === url)
+        if (duplicateIndex >= 0 && duplicateIndex !== this.knowledgeEditingLinkIndex) {
+            this.knowledgeError = 'This link is already saved for the project.'
+            return
+        }
+        const links = project.metadata.links.map(link => ({ ...link }))
+        const nextLink = { label: label.slice(0, 80), url: url.slice(0, 2048) }
+        if (this.knowledgeEditingLinkIndex === null) {
+            links.push(nextLink)
+        } else {
+            links[this.knowledgeEditingLinkIndex] = nextLink
+        }
+        const metadata: MasterWorkspaceProjectMetadata = {
+            ...project.metadata,
+            links,
+            lastActivityAt: new Date().toISOString(),
+        }
+        await this.saveKnowledgeMetadata(project, metadata, 'Project link saved')
+    }
+
+    async removeKnowledgeLink (index: number): Promise<void> {
+        const project = this.selectedProject
+        if (!project || this.saving || !project.metadata.links[index]) { return }
+        const metadata: MasterWorkspaceProjectMetadata = {
+            ...project.metadata,
+            links: project.metadata.links.filter((_link, linkIndex) => linkIndex !== index),
+            lastActivityAt: new Date().toISOString(),
+        }
+        await this.saveKnowledgeMetadata(project, metadata, 'Project link removed')
     }
 
     async saveSettings (): Promise<void> {
@@ -490,6 +594,26 @@ export class MasterWorkspaceComponent extends BaseComponent implements OnInit, O
             const date = new Date(now.getFullYear(), now.getMonth() - amounts.length + index + 1, 1)
             return { month: date.toISOString().slice(0, 7), amount: Math.max(0, amount) }
         })
+    }
+
+    private async saveKnowledgeMetadata (
+        project: MasterWorkspaceProject<BaseTabComponent>,
+        metadata: MasterWorkspaceProjectMetadata,
+        successMessage: string,
+    ): Promise<void> {
+        this.saving = true
+        this.error = ''
+        this.knowledgeError = ''
+        try {
+            await this.workspace.saveProject(project, metadata, project.priority)
+            this.selectedProject = this.projects.find(item => item.id === project.id) ?? null
+            this.cancelKnowledgeEditor()
+            this.status = successMessage
+        } catch (error) {
+            this.knowledgeError = error instanceof Error ? error.message : 'Could not save project knowledge.'
+        } finally {
+            this.saving = false
+        }
     }
 
     private emptyDraft (): ProjectDraft {

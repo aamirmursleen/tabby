@@ -213,8 +213,38 @@ h3 { color: var(--mw-text); font-size: 15px; }
 .state-pill.blocked { background: rgba(255, 82, 102, .1); color: var(--mw-red); }
 .state-pill.in_progress { background: rgba(94, 168, 245, .1); color: var(--mw-blue); }
 .error-empty { display: flex; align-items: center; justify-content: center; gap: 10px; color: #ffabb5; }
-.knowledge-document { max-width: 900px; }
-.knowledge-document h3 { margin-top: 24px; }
+.knowledge-header-actions { display: flex; align-items: center; gap: 8px; }
+.knowledge-grid { display: grid; grid-template-columns: minmax(320px, 1.1fr) minmax(320px, .9fr); gap: 14px; }
+.knowledge-note-card, .knowledge-links-card, .knowledge-source-card { min-width: 0; padding: 18px; }
+.knowledge-note-card, .knowledge-links-card { min-height: 250px; }
+.knowledge-source-card { grid-column: 1 / -1; }
+.knowledge-source-card > code { display: inline-flex; margin-top: 14px; padding: 7px 9px; border-radius: 6px; background: rgba(0, 0, 0, .18); color: #b8c7d3; }
+.knowledge-source-card > p { max-width: 760px; margin-top: 12px; color: #9eabb6; font-size: 12.5px; line-height: 1.55; }
+.knowledge-note { margin-top: 18px; color: #d2dae1; font-size: 13.5px; line-height: 1.7; overflow-wrap: anywhere; white-space: pre-wrap; }
+.knowledge-empty { display: grid; min-height: 190px; align-content: center; justify-items: center; gap: 8px; padding: 24px; color: var(--mw-muted); text-align: center; }
+.knowledge-empty > i { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 10px; background: rgba(94, 168, 245, .09); color: var(--mw-blue); font-size: 16px; }
+.knowledge-empty strong { color: var(--mw-text); font-size: 13px; }
+.knowledge-empty span { max-width: 390px; font-size: 12px; line-height: 1.5; }
+.knowledge-editor { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--mw-border); }
+.knowledge-editor .field-label:last-of-type { margin-bottom: 0; }
+.knowledge-editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+.knowledge-editor-footer > small { color: var(--mw-dim); font-size: 10.5px; }
+.knowledge-editor-footer > span { display: flex; gap: 8px; }
+.knowledge-error { margin-top: 10px; color: #ffabb5; font-size: 12px; }
+.knowledge-link-list { display: grid; gap: 7px; margin-top: 14px; }
+.knowledge-link-row { display: flex; min-width: 0; align-items: center; gap: 6px; }
+.knowledge-link-main { display: flex; min-width: 0; min-height: 54px; flex: 1; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid rgba(151, 171, 188, .12); border-radius: 8px; background: rgba(0, 0, 0, .11); color: var(--mw-copy); text-align: left; cursor: pointer; }
+.knowledge-link-main:hover { border-color: rgba(94, 168, 245, .35); background: rgba(94, 168, 245, .055); }
+.knowledge-link-main > span:nth-child(2) { min-width: 0; flex: 1; }
+.knowledge-link-main strong, .knowledge-link-main small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.knowledge-link-main strong { color: var(--mw-text); font-size: 12.5px; }
+.knowledge-link-main small { margin-top: 4px; color: var(--mw-muted); font-size: 10.5px; }
+.knowledge-link-main > i { color: var(--mw-dim); font-size: 11px; }
+.knowledge-link-icon { display: grid; width: 30px; height: 30px; flex: none !important; place-items: center; border-radius: 8px; background: rgba(94, 168, 245, .09); color: var(--mw-blue); }
+.knowledge-link-actions { display: flex; flex: none; gap: 3px; }
+.knowledge-link-actions .icon-button { width: 30px; height: 30px; color: var(--mw-muted); }
+.knowledge-link-actions .icon-button:hover { color: var(--mw-text); }
+.knowledge-link-actions .danger-action:hover { color: var(--mw-red); }
 .connections-grid { grid-template-columns: repeat(3, minmax(240px, 1fr)); }
 .command-help { display: flex; max-width: 760px; align-items: flex-start; gap: 15px; }
 .command-help > i { color: var(--mw-blue); font-size: 20px; }
@@ -305,6 +335,8 @@ button.global-card:hover { border-color: rgba(94, 168, 245, .35); background: rg
     .project-actions { margin-top: 18px; }
     .summary-layout { grid-template-columns: minmax(0, 1.15fr) minmax(300px, .85fr); }
     .connections-grid, .global-grid { grid-template-columns: repeat(2, minmax(240px, 1fr)); }
+    .knowledge-grid { grid-template-columns: 1fr; }
+    .knowledge-source-card { grid-column: auto; }
 }
 
 @media (max-width: 900px) {

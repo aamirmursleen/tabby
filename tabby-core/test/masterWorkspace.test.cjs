@@ -72,16 +72,19 @@ test('builds founder projects from real profile groups without opening saved con
 test('normalizes malformed project metadata without retaining unsafe or unbounded values', () => {
     assert.deepEqual(copy(normalizeMasterWorkspaceMetadata({
         description: '  Calendar booking  ',
+        notes: '  Founder context\nNext action  ',
         priority: 12,
         work: { total: -1, completed: 999, blocked: '2', overdue: 3.8 },
         knowledge: { path: '/aamir\nrm -rf /', status: 'unknown' },
         links: [
             { label: 'Portal', url: 'https://example.test/app' },
+            { label: 'Duplicate portal', url: 'https://example.test/app' },
             { label: 'Bad', url: 'javascript:alert(1)' },
         ],
     })), {
         priority: 4,
         description: 'Calendar booking',
+        notes: 'Founder context\nNext action',
         work: { total: 0, completed: 0, blocked: 0, overdue: 0 },
         knowledge: { path: '/aamir', status: 'unknown' },
         links: [{ label: 'Portal', url: 'https://example.test/app' }],
@@ -177,9 +180,16 @@ test('rejects malformed or oversized remote workspace snapshots', () => {
 })
 
 test('command search covers projects, connections, tmux names, folders and actions', () => {
-    const projects = buildMasterWorkspaceProjects(connections, {}, Date.now())
+    const projects = buildMasterWorkspaceProjects(connections, {
+        mama: {
+            notes: 'Founder launch checklist and customer rollout decisions',
+            links: [{ label: 'Architecture notes', url: 'https://docs.example.test/mamasign' }],
+        },
+    }, Date.now())
     assert.deepEqual(copy(buildMasterWorkspaceSearchResults(projects, 'mamasign-queue').map(result => result.label)), ['Queue worker'])
     assert.deepEqual(copy(buildMasterWorkspaceSearchResults(projects, '/srv/calendar').map(result => result.label)), ['Calendar staging'])
+    assert.deepEqual(copy(buildMasterWorkspaceSearchResults(projects, 'launch checklist').map(result => result.label)), ['MamaSign'])
+    assert.deepEqual(copy(buildMasterWorkspaceSearchResults(projects, 'architecture notes').map(result => result.label)), ['MamaSign'])
     assert.deepEqual(copy(buildMasterWorkspaceSearchResults(projects, 'knowledge').map(result => result.label)), ['Search project knowledge'])
     assert.equal(buildMasterWorkspaceSearchResults(projects, '').some(result => result.kind === 'project'), true)
 })
@@ -242,16 +252,24 @@ test('the dashboard exposes real project navigation and command palette controls
     assert.match(template, /Sync & API/)
     assert.match(template, /Open as tab/)
     assert.match(template, /Knowledge · \/aamir/)
+    assert.match(template, /My knowledge/)
+    assert.match(template, /Add note/)
+    assert.match(template, /Add link/)
+    assert.match(template, /saveKnowledgeNote\(\)/)
+    assert.match(template, /saveKnowledgeLink\(\)/)
+    assert.match(template, /removeKnowledgeLink\(index\)/)
     assert.match(template, /aria-label='Search projects, servers, folders and commands'/)
     assert.match(template, /Save project/)
     assert.doesNotMatch(template, /projects\.slice\(/)
 
     const appService = fs.readFileSync(path.resolve(__dirname, '../src/services/app.service.ts'), 'utf8')
     const workspaceService = fs.readFileSync(path.resolve(__dirname, '../src/services/masterWorkspace.service.ts'), 'utf8')
+    const component = fs.readFileSync(path.resolve(__dirname, '../src/components/masterWorkspace.component.ts'), 'utf8')
     const terminalTab = fs.readFileSync(path.resolve(__dirname, '../../tabby-terminal/src/api/baseTerminalTab.component.ts'), 'utf8')
     assert.match(appService, /get tabStateChanged\$ \(\): Observable<void>/)
     assert.match(appService, /recoveryStateChangedHint\.pipe\(debounceTime\(250\)\)/)
     assert.match(workspaceService, /this\.app\.tabStateChanged\$\.subscribe\(\(\) => this\.refresh\(\)\)/)
+    assert.match(component, /workspace\.saveProject\(project, metadata, project\.priority\)/)
     assert.doesNotMatch(workspaceService, /this\.app\.tabsChanged\$\.subscribe/)
     assert.match(terminalTab, /this\.sessionChanged\.next\(session\)\s+this\.recoveryStateChangedHint\.next\(\)/)
 })
