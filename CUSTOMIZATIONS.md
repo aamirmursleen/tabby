@@ -6,6 +6,10 @@ The current custom app is installed as **Aamir Terminal.app**, with bundle ident
 
 Its profile is `~/Library/Application Support/Aamir Terminal`. On 2026-09-14, the saved config and local/session storage were copied from the existing `tabby` profile without changing the original. This is a snapshot of saved state, not a transfer of running terminal processes. Subsequent profile changes are independent.
 
+Version `1.0.236-aamir.29` adds SSH key export directly to each profile's **Private keys** section and to the SSH Keychain list. Saved keys offer separate private-key and public-key exports; the public key can be installed on another server, while the private key can be moved to another computer. Private-key export requires an explicit warning confirmation, preserves the key's existing encryption, excludes the saved passphrase and writes with owner-only `0600` permissions. Replacing an existing destination file reapplies the requested permissions instead of retaining a broader old mode.
+
+Verification covers encrypted private-key byte preservation, confirmation and cancellation, public-key export, safe filenames, file closure and desktop permission enforcement when overwriting an existing file. SSH and Electron focused tests, TypeScript lint and the SSH Angular/webpack build pass.
+
 Version `1.0.236-aamir.28` ranks the **Open tabs** menu by a rolling local usage score. Selecting a tab adds one use and the time spent active adds gradually to its score; old activity decays over 30 days so the list adapts. The five highest-scoring open tabs appear in a **Most used** section while their original tab numbers remain visible. Search keeps the same ranking. The physical tab strip does not move while the user works.
 
 Usage tracking performs no per-keystroke work and has no polling loop. It updates only when the active tab changes, when the Open tabs menu opens, and at shutdown. Small writes are delayed and coalesced for one second, and history is capped at 128 local entries. Existing recent-profile history seeds the first ranking after upgrade.

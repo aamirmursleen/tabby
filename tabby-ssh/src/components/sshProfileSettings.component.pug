@@ -187,6 +187,24 @@ ul.nav-tabs(ngbNav, #nav='ngbNav')
                     .list-group-item.d-flex.align-items-center.p-1.ps-3(*ngFor='let path of profile.options.privateKeys')
                         i.fas.fa-key
                         .no-wrap.me-auto {{getPrivateKeyLabel(path)}}
+                        .hover-reveal(
+                            *ngIf='isSavedPrivateKey(path)',
+                            ngbDropdown,
+                            container='body',
+                            placement='bottom-right top-right auto',
+                        )
+                            button.btn.btn-link(ngbDropdownToggle, ngbTooltip='Key actions')
+                                i.fas.fa-ellipsis-v
+                            div(ngbDropdownMenu)
+                                button(ngbDropdownItem, (click)='copyPublicKey(path)')
+                                    i.fas.fa-fw.fa-copy
+                                    span(translate) Copy public key
+                                button(ngbDropdownItem, (click)='exportPublicKey(path)')
+                                    i.fas.fa-fw.fa-file-download
+                                    span(translate) Export public key
+                                button(ngbDropdownItem, (click)='exportPrivateKey(path)')
+                                    i.fas.fa-fw.fa-file-export
+                                    span(translate) Export private key
                         button.btn.btn-link((click)='removePrivateKey(path)')
                             i.fas.fa-trash
                 .d-flex.align-items-end.mb-2(*ngIf='savedKeys.length')
@@ -202,6 +220,24 @@ ul.nav-tabs(ngbNav, #nav='ngbNav')
                     )
                         i.fas.fa-plus
                         span(translate) Use saved key
+                    .ms-2(
+                        ngbDropdown,
+                        container='body',
+                        placement='bottom-right top-right auto',
+                    )
+                        button.btn.btn-secondary(
+                            ngbDropdownToggle,
+                            [disabled]='!selectedSavedKeyRef',
+                        )
+                            i.fas.fa-file-export
+                            span(translate) Export
+                        div(ngbDropdownMenu)
+                            button(ngbDropdownItem, (click)='exportPrivateKey(selectedSavedKeyRef)')
+                                i.fas.fa-fw.fa-file-export
+                                span(translate) Export private key
+                            button(ngbDropdownItem, (click)='exportPublicKey(selectedSavedKeyRef)')
+                                i.fas.fa-fw.fa-file-download
+                                span(translate) Export public key
                 .mb-2(*ngIf='showPastePrivateKeyForm')
                     input.form-control.mb-2(
                         type='text',

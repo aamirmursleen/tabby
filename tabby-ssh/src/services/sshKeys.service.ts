@@ -194,6 +194,36 @@ export class SSHKeyStorageService {
         this.platform.setClipboard({ text: key.publicKey })
     }
 
+    async exportPrivateKey (id: string): Promise<boolean> {
+        const key = this.getByID(id)
+        if (!key) {
+            throw new Error('SSH key not found')
+        }
+        const confirmation = await this.platform.showMessageBox({
+            type: 'warning',
+            message: `Export private SSH key "${key.label}"?`,
+            detail: 'Anyone with this file and its passphrase can access servers that trust this key. The saved passphrase is not included.',
+            buttons: ['Export private key', 'Cancel'],
+            defaultId: 1,
+            cancelId: 1,
+        })
+        if (confirmation.response !== 0) {
+            return false
+        }
+
+        const contents = await this.retrievePrivateKey(this.makeRef(id))
+        return this.downloadKey(this.getExportFilename(key), 0o600, contents)
+    }
+
+    async exportPublicKey (id: string): Promise<boolean> {
+        const key = this.getByID(id)
+        if (!key?.publicKey) {
+            throw new Error('Public key is not available')
+        }
+        const contents = Buffer.from(`${key.publicKey}\n`)
+        return this.downloadKey(`${this.getExportFilename(key)}.pub`, 0o644, contents)
+    }
+
     getPrivateKeyPath (id: string): string {
         return this.getKeyPath(id)
     }
@@ -224,6 +254,31 @@ export class SSHKeyStorageService {
         await fs.chmod(temp, 0o600).catch(() => null)
         await fs.rename(temp, target)
         await fs.chmod(target, 0o600).catch(() => null)
+    }
+
+    private async downloadKey (name: string, mode: number, contents: Buffer): Promise<boolean> {
+        const download = await this.platform.startDownload(name, mode, contents.length)
+        if (!download) {
+            return false
+        }
+        try {
+            await download.write(contents)
+        } finally {
+            download.close()
+        }
+        return true
+    }
+
+    private getExportFilename (key: SSHStoredKey): string {
+        const type = key.type === 'ssh-ed25519' ? 'ed25519' : key.type === 'ssh-rsa' ? 'rsa' : 'ssh'
+        const label = key.label
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLocaleLowerCase()
+            .replace(/[^a-z0-9._-]+/g, '-')
+            .replace(/^[-.]+|[-.]+$/g, '')
+            .substring(0, 80)
+        return `id_${type}_${label || 'key'}`
     }
 
     private getKeyPath (id: string): string {

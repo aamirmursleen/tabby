@@ -170,6 +170,51 @@ export class SSHProfileSettingsComponent implements ProfileSettingsComponent<SSH
         return this.sshKeys.makeRef(key.id)
     }
 
+    isSavedPrivateKey (ref: string): boolean {
+        return !!this.sshKeys.getByRef(ref)
+    }
+
+    copyPublicKey (ref: string): void {
+        const key = this.sshKeys.getByRef(ref)
+        if (!key) {
+            return
+        }
+        try {
+            this.sshKeys.copyPublicKey(key.id)
+            this.notifications.notice('Public key copied')
+        } catch (error) {
+            this.notifications.error('Could not copy public key', String(error))
+        }
+    }
+
+    async exportPrivateKey (ref: string|null): Promise<void> {
+        const key = ref ? this.sshKeys.getByRef(ref) : null
+        if (!key) {
+            return
+        }
+        try {
+            if (await this.sshKeys.exportPrivateKey(key.id)) {
+                this.notifications.notice('Private key exported')
+            }
+        } catch (error) {
+            this.notifications.error('Could not export private key', String(error))
+        }
+    }
+
+    async exportPublicKey (ref: string|null): Promise<void> {
+        const key = ref ? this.sshKeys.getByRef(ref) : null
+        if (!key) {
+            return
+        }
+        try {
+            if (await this.sshKeys.exportPublicKey(key.id)) {
+                this.notifications.notice('Public key exported')
+            }
+        } catch (error) {
+            this.notifications.error('Could not export public key', String(error))
+        }
+    }
+
     private addPrivateKeyRef (ref: string): void {
         if (this.profile.options.privateKeys.includes(ref)) {
             return

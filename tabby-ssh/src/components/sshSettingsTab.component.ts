@@ -117,6 +117,14 @@ export class SSHSettingsTabComponent {
         }
     }
 
+    async exportPrivateKey (key: SSHStoredKey): Promise<void> {
+        await this.runKeyAction(() => this.sshKeys.exportPrivateKey(key.id), 'Private key exported')
+    }
+
+    async exportPublicKey (key: SSHStoredKey): Promise<void> {
+        await this.runKeyAction(() => this.sshKeys.exportPublicKey(key.id), 'Public key exported')
+    }
+
     trackKey (_index: number, key: SSHStoredKey): string {
         return key.id
     }

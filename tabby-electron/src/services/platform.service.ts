@@ -439,6 +439,7 @@ class ElectronFileDownload extends FileDownload {
 
     async open (): Promise<void> {
         this.file = await fs.open(this.filePath, 'w', this.mode)
+        await this.file.chmod(this.mode)
     }
 
     getName (): string {

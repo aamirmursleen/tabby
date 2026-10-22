@@ -15,6 +15,8 @@ const savedKeyID = '11111111-1111-4111-8111-111111111111'
 function setup () {
     const directory = os.tmpdir()
     const saves = []
+    const downloads = []
+    const messages = []
     const savedPassphrases = []
     const passwordStorage = {
         async savePrivateKeyPassword (hash, passphrase) {
@@ -28,6 +30,24 @@ function setup () {
     const configPath = path.join(directory, `aamir-ssh-keys-${crypto.randomUUID()}`, 'config.yaml')
     const platform = {
         getConfigPath: () => configPath,
+        messageResponse: 0,
+        async showMessageBox (options) {
+            messages.push(options)
+            return { response: this.messageResponse }
+        },
+        async startDownload (name, mode, size) {
+            const download = {
+                name,
+                mode,
+                size,
+                chunks: [],
+                closed: false,
+                async write (chunk) { this.chunks.push(Buffer.from(chunk)) },
+                close () { this.closed = true },
+            }
+            downloads.push(download)
+            return download
+        },
     }
     const declarations = loadDeclarations('tabby-ssh/src/services/sshKeys.service.ts', [
         'SSH_KEY_REF_PREFIX',
@@ -44,7 +64,7 @@ function setup () {
     })
     const service = new declarations.SSHKeyStorageService(config, platform, passwordStorage)
     const provider = new declarations.SSHKeyFileProvider(service)
-    return { ...declarations, config, saves, savedPassphrases, passwordStorage, service, provider }
+    return { ...declarations, config, downloads, messages, platform, saves, savedPassphrases, passwordStorage, service, provider }
 }
 
 async function testKeyPair () {
@@ -182,6 +202,46 @@ test('renaming and deleting saved keys update metadata and remove the private ke
     assert.equal(config.store.ssh.keys.length, 0)
     await assert.rejects(fs.stat(keyPath), /ENOENT/)
     await assert.rejects(service.retrievePrivateKey(saved.ref), /not found/i)
+})
+
+test('private key export requires confirmation, preserves encryption, and writes a protected file', async () => {
+    const { downloads, messages, platform, service } = setup()
+    const passphrase = 'test-only-passphrase'
+    const privateKey = crypto.generateKeyPairSync('ed25519', {
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem', cipher: 'aes-256-cbc', passphrase },
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+    }).privateKey
+    const saved = await service.savePrivateKey('Production API', privateKey, passphrase)
+
+    assert.equal(await service.exportPrivateKey(saved.key.id), true)
+    assert.equal(messages.length, 1)
+    assert.match(messages[0].message, /Production API/)
+    assert.match(messages[0].detail, /passphrase is not included/i)
+    assert.deepEqual(Array.from(messages[0].buttons), ['Export private key', 'Cancel'])
+    assert.equal(downloads.length, 1)
+    assert.equal(downloads[0].name, 'id_ed25519_production-api')
+    assert.equal(downloads[0].mode, 0o600)
+    assert.equal(downloads[0].size, Buffer.byteLength(privateKey))
+    assert.equal(Buffer.concat(downloads[0].chunks).toString(), privateKey)
+    assert.equal(downloads[0].closed, true)
+
+    platform.messageResponse = 1
+    assert.equal(await service.exportPrivateKey(saved.key.id), false)
+    assert.equal(downloads.length, 1)
+})
+
+test('public key export writes a shareable pub file without a warning', async () => {
+    const { downloads, messages, service } = setup()
+    const { privateKey } = await testKeyPair()
+    const saved = await service.savePrivateKey('Production API', privateKey)
+
+    assert.equal(await service.exportPublicKey(saved.key.id), true)
+    assert.equal(messages.length, 0)
+    assert.equal(downloads.length, 1)
+    assert.equal(downloads[0].name, 'id_ed25519_production-api.pub')
+    assert.equal(downloads[0].mode, 0o644)
+    assert.equal(Buffer.concat(downloads[0].chunks).toString(), `${saved.key.publicKey}\n`)
+    assert.equal(downloads[0].closed, true)
 })
 
 test('failed metadata saves remove newly written private key files', async () => {

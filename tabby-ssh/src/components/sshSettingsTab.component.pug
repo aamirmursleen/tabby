@@ -137,6 +137,19 @@ h3.mt-5(translate) Keychain
         )
             i.fas.fa-copy
         button.btn.btn-link(
+            *ngIf='key.publicKey',
+            (click)='exportPublicKey(key)',
+            [disabled]='keyBusy',
+            ngbTooltip='Export public key',
+        )
+            i.fas.fa-file-download
+        button.btn.btn-link(
+            (click)='exportPrivateKey(key)',
+            [disabled]='keyBusy',
+            ngbTooltip='Export private key',
+        )
+            i.fas.fa-file-export
+        button.btn.btn-link(
             (click)='renameKey(key)',
             ngbTooltip='Rename',
         )
