@@ -69,3 +69,9 @@ connectionResumeContexts: {}
 
 workspaceNotes: []
 workspaceSnippetGroups: []
+masterWorkspace:
+  projects:
+    __nonStructural: true
+  relay:
+    url: ''
+    workspaceSlug: ''

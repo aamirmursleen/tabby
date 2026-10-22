@@ -35,6 +35,7 @@ import { WelcomeTabComponent } from './components/welcomeTab.component'
 import { TransfersMenuComponent } from './components/transfersMenu.component'
 import { OpenTabsMenuComponent } from './components/openTabsMenu.component'
 import { ActiveSessionsComponent } from './components/activeSessions.component'
+import { MasterWorkspaceComponent } from './components/masterWorkspace.component'
 import { ProfileIconComponent } from './components/profileIcon.component'
 import { ProfileTreeComponent } from './components/profileTree.component'
 
@@ -139,6 +140,7 @@ const PROVIDERS = [
         TransfersMenuComponent,
         OpenTabsMenuComponent,
         ActiveSessionsComponent,
+        MasterWorkspaceComponent,
         DropZoneDirective,
         CdkAutoDropGroup,
         ProfileIconComponent,
@@ -177,7 +179,7 @@ export default class AppModule { // eslint-disable-line @typescript-eslint/no-ex
     ) {
         app.ready$.subscribe(() => {
             config.ready$.toPromise().then(() => {
-                if (config.store.enableWelcomeTab) {
+                if (config.store.enableWelcomeTab && !config.store.masterWorkspace) {
                     app.openNewTabRaw({ type: WelcomeTabComponent })
                 }
             })

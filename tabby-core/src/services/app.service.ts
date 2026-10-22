@@ -75,6 +75,12 @@ export class AppService {
     get tabRemoved$ (): Observable<BaseTabComponent> { return this.tabRemoved }
     get tabClosed$ (): Observable<BaseTabComponent> { return this.tabClosed }
     get tabDragActive$ (): Observable<BaseTabComponent|null> { return this.tabDragActive }
+    /**
+     * Emits when terminal recovery or live session state may have changed.
+     * Recovery can update many panes together, so coalesce the burst before
+     * consumers refresh derived status.
+     */
+    get tabStateChanged$ (): Observable<void> { return this.recoveryStateChangedHint.pipe(debounceTime(250)) }
 
     /** Fires once when the app is ready */
     get ready$ (): Observable<void> { return this.ready }
@@ -115,6 +121,11 @@ export class AppService {
                         for (const tab of tabs) {
                             this.openNewTabRaw(tab, false)
                         }
+                    }
+                    // The pinned Master Workspace owns startup focus. Recovered
+                    // terminals stay alive but hidden until the user selects one.
+                    if (config.store.masterWorkspace) {
+                        this.selectTab(null, false)
                     }
                     /** Continue to store the tabs even if the setting is currently off */
                     this.tabRecovery.enabled = true

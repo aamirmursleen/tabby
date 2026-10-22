@@ -47,14 +47,26 @@ title-bar(
                 (wheel)='onTabsWheel($event)',
                 cdkAutoDropGroup='app-tabs'
             )
+                button.master-workspace-tab(
+                    type='button',
+                    [class.active]='masterWorkspaceActive',
+                    [class.vertical]='hasVerticalTabs()',
+                    (click)='selectMasterWorkspace()',
+                    ngbTooltip='Master Workspace',
+                    aria-label='Open Master Workspace'
+                )
+                    span.master-tab-index(*ngIf='!config.store.terminal.hideTabIndex') 1
+                    i.fas.fa-grid-2(aria-hidden='true')
+                    span.master-tab-name Master Workspace
+                    i.fas.fa-thumbtack.master-tab-pin(aria-hidden='true')
                 tab-header(
                     *ngFor='let tab of app.tabs; let idx = index',
-                    [index]='idx',
+                    [index]='idx + 1',
                     [tab]='tab',
                     [active]='tab == app.activeTab',
                     [@animateTab]='{value: "in", params: {size: targetTabSize}}',
                     [@.disabled]='hasVerticalTabs() || !config.store.accessibility.animations',
-                    (click)='app.selectTab(tab)',
+                    (click)='selectAppTab(tab)',
                     [class.fully-draggable]='hostApp.platform !== Platform.macOS',
                     [ngbTooltip]='getTabLabel(tab, idx)'
                 )
@@ -168,13 +180,20 @@ title-bar(
                 *ngIf='config.store.appearance.frame == "thin" && (hostApp.platform == Platform.Windows) && (config.store.appearance.tabsLocation == "top")',
             )
         .content
-            start-page.content-tab.content-tab-active(*ngIf='ready && app.tabs.length == 0')
+            master-workspace.content-tab(
+                *ngIf='ready',
+                [class.content-tab-active]='masterWorkspaceActive',
+                [active]='masterWorkspaceActive',
+                (terminalSelected)='showActiveTerminal()',
+                (connectionsRequested)='openConnectionsPanel()',
+                (snippetsRequested)='openSnippetsPanel()'
+            )
 
             tab-body.content-tab(
                 #tabBodies,
                 *ngFor='let tab of unsortedTabs',
-                [class.content-tab-active]='tab == app.activeTab',
-                [active]='tab == app.activeTab',
+                [class.content-tab-active]='!masterWorkspaceActive && tab == app.activeTab',
+                [active]='!masterWorkspaceActive && tab == app.activeTab',
                 [tab]='tab',
             )
 

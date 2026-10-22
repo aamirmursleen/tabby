@@ -154,6 +154,34 @@ $tab-border-radius: 4px;
         }
     }
 
+    .master-workspace-tab {
+        position: relative;
+        display: flex;
+        flex: 0 0 auto;
+        width: auto;
+        min-width: 156px;
+        height: var(--tabs-height);
+        align-items: center;
+        gap: 8px;
+        padding: 0 11px;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: transparent;
+        color: var(--theme-fg-less);
+        font-size: 11px;
+        cursor: pointer;
+        -webkit-app-region: no-drag;
+
+        &:hover { background: color-mix(in srgb, var(--theme-fg) 7%, transparent); color: var(--theme-fg); }
+        &.active { border-bottom-color: #48d69f; background: color-mix(in srgb, var(--theme-fg) 9%, transparent); color: var(--theme-fg); }
+        &.vertical { width: 100%; min-width: 0; flex-basis: var(--tabs-height); }
+
+        > i.fa-grid-2 { color: #48d69f; font-size: 11px; }
+        .master-tab-index { display: grid; width: 18px; place-items: center; font-weight: bold; }
+        .master-tab-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .master-tab-pin { color: var(--theme-fg-less-2); font-size: 8px; }
+    }
+
     .tab-scroll-button {
         z-index: 2;
         width: 38px;

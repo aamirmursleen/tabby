@@ -850,6 +850,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
             this.session = null
         }
         this.sessionChanged.next(session)
+        this.recoveryStateChangedHint.next()
     }
 
     showToolbar (): void {

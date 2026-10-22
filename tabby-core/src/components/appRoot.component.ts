@@ -90,7 +90,7 @@ export class AppRootComponent {
     @HostBinding('class.platform-win32') platformClassWindows = process.platform === 'win32'
     @HostBinding('class.platform-darwin') platformClassMacOS = process.platform === 'darwin'
     @HostBinding('class.platform-linux') platformClassLinux = process.platform === 'linux'
-    @HostBinding('class.no-tabs') noTabs = true
+    @HostBinding('class.no-tabs') noTabs = false
     @ViewChildren(TabBodyComponent) tabBodies: TabBodyComponent[]
     @ViewChild('activeTransfersDropdown') activeTransfersDropdown: NgbDropdown
     @ViewChild('openTabsDropdown') openTabsDropdown: NgbDropdown
@@ -102,6 +102,7 @@ export class AppRootComponent {
     savedLayoutsOpen = false
     openTabsMenuOpen = false
     activeSessionsOpen = true
+    masterWorkspaceActive = true
     private logger: Logger
 
     constructor (
@@ -124,11 +125,13 @@ export class AppRootComponent {
         this.hotkeys.hotkey$.subscribe((hotkey: string) => {
             if (hotkey.startsWith('tab-')) {
                 const index = parseInt(hotkey.split('-')[1])
-                if (index <= this.app.tabs.length) {
-                    this.app.selectTab(this.app.tabs[index - 1])
+                if (index === 1) {
+                    this.selectMasterWorkspace()
+                } else if (index - 1 <= this.app.tabs.length) {
+                    this.selectAppTab(this.app.tabs[index - 2])
                 }
             }
-            if (this.app.activeTab) {
+            if (this.app.activeTab && !this.masterWorkspaceActive) {
                 if (hotkey === 'close-tab') {
                     this.app.closeTab(this.app.activeTab, true)
                 }
@@ -163,6 +166,9 @@ export class AppRootComponent {
                     this.app.combineTabsInto(this.app.activeTab)
                 }
             }
+            if (this.masterWorkspaceActive && hotkey === 'next-tab' && this.app.tabs.length) {
+                this.selectAppTab(this.app.tabs[0])
+            }
             if (hotkey === 'reopen-tab') {
                 this.app.reopenLastTab()
             }
@@ -192,11 +198,14 @@ export class AppRootComponent {
                 }
             }
             this.unsortedTabs = this.unsortedTabs.filter(x => x !== tab)
-            this.noTabs = app.tabs.length === 0
+            this.noTabs = false
             this.app.emitTabDragEnded()
         })
 
-        this.app.activeTabChange$.subscribe(() => {
+        this.app.activeTabChange$.subscribe(tab => {
+            if (this.ready) {
+                this.masterWorkspaceActive = !tab
+            }
             const animationsEnabled = this.config.store?.accessibility?.animations !== false
             for (const delay of getTabRevealDelays(animationsEnabled)) {
                 window.setTimeout(() => this.revealActiveTab(), delay)
@@ -226,6 +235,7 @@ export class AppRootComponent {
     async ngOnInit () {
         this.config.ready$.toPromise().then(() => {
             this.ready = true
+            this.masterWorkspaceActive = true
             this.app.emitReady()
         })
 
@@ -316,7 +326,36 @@ export class AppRootComponent {
 
     onOpenTabSelected (tab: BaseTabComponent): void {
         this.openTabsDropdown.close()
+        this.selectAppTab(tab)
+    }
+
+    selectMasterWorkspace (): void {
+        if (this.app.activeTab) {
+            this.app.selectTab(null, false)
+        }
+        this.masterWorkspaceActive = true
+        this.hostWindow.setTitle('Master Workspace — Aamir Terminal')
+        window.setTimeout(() => this.revealActiveTab())
+    }
+
+    selectAppTab (tab: BaseTabComponent): void {
+        this.masterWorkspaceActive = false
         this.app.selectTab(tab)
+    }
+
+    showActiveTerminal (): void {
+        if (this.app.activeTab) {
+            this.masterWorkspaceActive = false
+        }
+    }
+
+    openConnectionsPanel (): void {
+        this.setActiveSessionsOpen(true)
+    }
+
+    openSnippetsPanel (): void {
+        this.workspaceToolsOpen = true
+        this.savedLayoutsOpen = false
     }
 
     toggleActiveSessions (): void {
@@ -359,7 +398,7 @@ export class AppRootComponent {
     }
 
     private revealActiveTab (): void {
-        const activeHeader = this.tabsScroller?.nativeElement.querySelector<HTMLElement>('tab-header.active')
+        const activeHeader = this.tabsScroller?.nativeElement.querySelector<HTMLElement>('.master-workspace-tab.active, tab-header.active')
         activeHeader?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
     }
 }
